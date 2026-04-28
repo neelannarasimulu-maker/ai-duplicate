@@ -1,4 +1,4 @@
-const CACHE_NAME = "ai-workbench-v1";
+const CACHE_NAME = "ai-workbench-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/pwa-icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -19,12 +19,15 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/rest/")) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
+    return;
+  }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-
-      return fetch(event.request)
+    fetch(event.request, { cache: "no-store" })
         .then((response) => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -32,7 +35,6 @@ self.addEventListener("fetch", (event) => {
           });
           return response;
         })
-        .catch(() => caches.match("/"));
-    }),
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/"))),
   );
 });

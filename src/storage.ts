@@ -126,9 +126,13 @@ async function remoteGetPayloads<T>(table: "work_tasks" | "saved_outputs", order
   if (!supabaseConfigured) return fallback();
 
   try {
-    const response = await supabaseFetch(`/rest/v1/${table}?select=payload&order=${order}`);
+    const response = await supabaseFetch(`/rest/v1/${table}?select=payload&order=${order}&_=${Date.now()}`, {
+      cache: "no-store",
+    });
     const rows = (await response.json()) as Array<{ payload: T }>;
-    return rows.map((row) => row.payload);
+    const payloads = rows.map((row) => row.payload);
+    await Promise.all(payloads.map((payload) => put(table === "work_tasks" ? taskStore : outputStore, payload)));
+    return payloads;
   } catch {
     return fallback();
   }
@@ -167,7 +171,9 @@ async function remoteGetMeta<T>(key: string) {
   if (!supabaseConfigured) return undefined;
 
   try {
-    const response = await supabaseFetch(`/rest/v1/app_meta?key=eq.${encodeURIComponent(key)}&select=value&limit=1`);
+    const response = await supabaseFetch(`/rest/v1/app_meta?key=eq.${encodeURIComponent(key)}&select=value&limit=1&_=${Date.now()}`, {
+      cache: "no-store",
+    });
     const rows = (await response.json()) as Array<{ value: T }>;
     return rows[0]?.value;
   } catch {
@@ -192,10 +198,13 @@ async function remoteSetMeta<T>(key: string, value: T) {
 async function supabaseFetch(path: string, init: RequestInit = {}) {
   const response = await fetch(`${supabaseUrl}${path}`, {
     ...init,
+    cache: init.cache ?? "no-store",
     headers: {
       apikey: supabaseAnonKey,
       Authorization: `Bearer ${supabaseAnonKey}`,
       "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
       ...(init.headers ?? {}),
     },
   });

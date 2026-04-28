@@ -211,6 +211,7 @@ function App() {
   const [quickChecklistItems, setQuickChecklistItems] = useState<ChecklistItem[]>([]);
   const [quickChecklistItem, setQuickChecklistItem] = useState("");
   const [mobileFullOpen, setMobileFullOpen] = useState(false);
+  const [mobileSection, setMobileSection] = useState<"capture" | "tasks" | "reminders">("tasks");
   const [reminderDrafts, setReminderDrafts] = useState<Record<string, string>>({});
   const [now, setNow] = useState(() => Date.now());
   const [message, setMessage] = useState("");
@@ -679,10 +680,26 @@ function App() {
 
       {viewMode === "mobile" && (
         <section className="mobile-shell">
+          <section className="mobile-tabs" aria-label="Mobile views">
+            <button className={mobileSection === "tasks" ? "active" : ""} onClick={() => setMobileSection("tasks")} type="button">
+              <ListTodo size={16} />
+              Tasks
+            </button>
+            <button className={mobileSection === "capture" ? "active" : ""} onClick={() => setMobileSection("capture")} type="button">
+              <Plus size={16} />
+              Capture
+            </button>
+            <button className={mobileSection === "reminders" ? "active" : ""} onClick={() => setMobileSection("reminders")} type="button">
+              <CalendarClock size={16} />
+              Today
+            </button>
+          </section>
+
+          {mobileSection === "capture" && (
           <section className="panel mobile-capture">
             <h2>
               <Smartphone size={18} />
-              Mobile task capture
+              Capture
             </h2>
             <label>
               Project
@@ -745,12 +762,20 @@ function App() {
               Save mobile task
             </button>
           </section>
+          )}
 
+          {mobileSection === "tasks" && (
           <section className="panel">
-            <h2>
-              <ListTodo size={18} />
-              My tasks
-            </h2>
+            <div className="mobile-section-header">
+              <h2>
+                <ListTodo size={18} />
+                Tasks
+              </h2>
+              <button className="primary-button" onClick={() => setMobileSection("capture")} type="button">
+                <Plus size={15} />
+                New
+              </button>
+            </div>
             <div className="mobile-task-list">
               {sortedWorkTasks.map((item) => (
                 <article key={item.id} className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
@@ -773,6 +798,45 @@ function App() {
               ))}
             </div>
           </section>
+          )}
+
+          {mobileSection === "reminders" && (
+          <section className="panel">
+            <div className="mobile-section-header">
+              <h2>
+                <CalendarClock size={18} />
+                Today
+              </h2>
+              <button className="ghost-button" onClick={() => setViewMode("reminders")} type="button">
+                Planner
+              </button>
+            </div>
+            <div className="mobile-task-list">
+              {[...reminderPlanner.overdue, ...reminderPlanner.today].map((item) => (
+                <article key={item.id} className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <small>{projects[item.projectId].name}</small>
+                    <small>{reminderLabel(item, now)}</small>
+                  </div>
+                  <div className="mobile-task-actions">
+                    <button className="ghost-button" onClick={() => openMobileTask(item, "details")} type="button">
+                      <ListTodo size={15} />
+                      Details
+                    </button>
+                    <button className="primary-button" onClick={() => scheduleReminderToday(item.id)} type="button">
+                      <CalendarClock size={15} />
+                      Replan
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {reminderPlanner.overdue.length + reminderPlanner.today.length === 0 && (
+                <p className="empty">No overdue or today reminders.</p>
+              )}
+            </div>
+          </section>
+          )}
 
           <section className="panel mobile-full-panel">
             <button className="ghost-button mobile-full-toggle" onClick={() => setMobileFullOpen((current) => !current)} type="button">
