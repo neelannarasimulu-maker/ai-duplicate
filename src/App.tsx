@@ -4,12 +4,14 @@ import {
   BarChart3,
   CalendarClock,
   Check,
+  CheckSquare,
   Clipboard,
   Download,
   FileImage,
   FileText,
   History,
   ListTodo,
+  Plus,
   Save,
   Smartphone,
   Sparkles,
@@ -21,30 +23,113 @@ import { Document, Packer, Paragraph, TextRun } from "docx";
 import {
   deleteTask,
   getStorageBackendLabel,
-  getMeta,
   getOutputs,
   getTasks,
   migrateLegacyStorage,
   saveOutput,
   saveTask,
-  setMeta,
 } from "./storage";
-import type { Format, InputAsset, Priority, ProjectId, Requirements, SavedOutput, TaskStatus, WorkTask } from "./types";
+import type { ChecklistItem, Format, InputAsset, Priority, ProjectId, Requirements, SavedOutput, TaskStatus, WorkTask } from "./types";
 
 type TaskTemplate = {
   id: string;
   label: string;
   description: string;
   category: string;
+  requirements: Requirements;
 };
 
+const requirementPresets = {
+  summary: {
+    outputType: "Information summary document",
+    format: "Markdown",
+    tone: "Clear, practical, and neutral",
+    audience: "Internal team",
+    length: "Medium",
+    sections: "Executive summary, Key facts, Decisions or implications, Risks or gaps, Action items",
+    constraints: "Separate confirmed facts from assumptions. Keep the wording easy to reuse in a document.",
+    imageRequirements: "",
+  },
+  document: {
+    outputType: "New business document",
+    format: "Markdown",
+    tone: "Professional and clear",
+    audience: "Internal team",
+    length: "Detailed",
+    sections: "Title, Purpose, Background, Main content, Recommendations, Next steps",
+    constraints: "Produce a complete document, not notes about the document. Use headings and concise paragraphs.",
+    imageRequirements: "",
+  },
+  email: {
+    outputType: "Email draft",
+    format: "Markdown",
+    tone: "Warm, concise, and professional",
+    audience: "Recipient named in the source notes",
+    length: "Short",
+    sections: "Subject line, Email body, Optional follow-up note",
+    constraints: "Write ready-to-send email copy. Include a clear ask or next step where appropriate.",
+    imageRequirements: "",
+  },
+  report: {
+    outputType: "Structured report",
+    format: "Markdown",
+    tone: "Evidence-led and businesslike",
+    audience: "Decision makers",
+    length: "Detailed",
+    sections: "Executive summary, Context, Findings, Evidence, Risks, Recommendations, Next steps",
+    constraints: "Make the report useful for decisions. Flag missing evidence clearly.",
+    imageRequirements: "",
+  },
+  proposal: {
+    outputType: "Proposal-ready document",
+    format: "Markdown",
+    tone: "Confident, useful, and client-ready",
+    audience: "Client or sponsor",
+    length: "Detailed",
+    sections: "Overview, Client need, Proposed approach, Deliverables, Timeline, Assumptions, Next steps",
+    constraints: "Avoid generic sales language. Convert rough notes into concrete proposed work.",
+    imageRequirements: "",
+  },
+  presentation: {
+    outputType: "Presentation content",
+    format: "Markdown",
+    tone: "Clear, structured, and presentation-ready",
+    audience: "Meeting audience",
+    length: "Medium",
+    sections: "Slide title, Slide bullets, Speaker notes, Closing action",
+    constraints: "Keep slide bullets short. Put detail in speaker notes.",
+    imageRequirements: "Suggest useful visuals, charts, or screenshots where they would improve the presentation.",
+  },
+  process: {
+    outputType: "Process document",
+    format: "Markdown",
+    tone: "Plain, precise, and operational",
+    audience: "People following the process",
+    length: "Detailed",
+    sections: "Purpose, Scope, Roles, Steps, Exceptions, Checklist, Owner and review date",
+    constraints: "Write actionable steps in order. Include a checklist that can be ticked off.",
+    imageRequirements: "",
+  },
+  checklist: {
+    outputType: "Checklist or shopping list",
+    format: "Markdown",
+    tone: "Plain and practical",
+    audience: "Personal use or project team",
+    length: "Short",
+    sections: "Checklist, Notes, Next steps",
+    constraints: "Keep items tickable, specific, and easy to complete.",
+    imageRequirements: "",
+  },
+} satisfies Record<string, Requirements>;
+
 const commonTasks: TaskTemplate[] = [
-  { id: "draft-document", label: "Draft document", description: "Create a polished document from rough input.", category: "Documentation" },
-  { id: "summarize", label: "Summarize information", description: "Extract key points, risks, and next steps.", category: "Analysis" },
-  { id: "draft-email", label: "Draft email", description: "Prepare a professional email draft.", category: "Communication" },
-  { id: "create-report", label: "Create report", description: "Build a structured report with findings.", category: "Reporting" },
-  { id: "proposal-copy", label: "Create proposal copy", description: "Turn notes into proposal-ready language.", category: "Proposal" },
-  { id: "presentation-text", label: "Presentation text", description: "Create slide-ready wording and speaker notes.", category: "Presentation" },
+  { id: "draft-document", label: "Draft document", description: "Produce a complete document with headings, flow, and next steps.", category: "Documentation", requirements: requirementPresets.document },
+  { id: "summarize", label: "Summarize information", description: "Create a decision-useful summary with facts, risks, gaps, and actions.", category: "Analysis", requirements: requirementPresets.summary },
+  { id: "draft-email", label: "Draft email", description: "Prepare a ready-to-send email with subject line and clear ask.", category: "Communication", requirements: requirementPresets.email },
+  { id: "create-report", label: "Create report", description: "Build a structured report with findings, evidence, and recommendations.", category: "Reporting", requirements: requirementPresets.report },
+  { id: "proposal-copy", label: "Create proposal copy", description: "Turn notes into proposal-ready language with scope and deliverables.", category: "Proposal", requirements: requirementPresets.proposal },
+  { id: "presentation-text", label: "Presentation text", description: "Create slide-ready bullets with practical speaker notes.", category: "Presentation", requirements: requirementPresets.presentation },
+  { id: "checklist", label: "Checklist or shopping list", description: "Create tickable items for shopping, subtasks, or follow-up work.", category: "Checklist", requirements: requirementPresets.checklist },
 ];
 
 const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTemplate[] }> = {
@@ -52,8 +137,8 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
     name: "AVBOB",
     context: "Client communication, document preparation, reports, presentations, and polished business content.",
     tasks: [
-      { id: "client-communication", label: "Write client communication", description: "Turn notes into clear client-facing messages.", category: "Communication" },
-      { id: "summarize-documents", label: "Summarize documents", description: "Extract key points, risks, and action items.", category: "Analysis" },
+      { id: "client-communication", label: "Write client communication", description: "Turn notes into a ready-to-send client email or letter.", category: "Communication", requirements: requirementPresets.email },
+      { id: "summarize-documents", label: "Summarize documents", description: "Extract key points, risks, gaps, decisions, and action items.", category: "Analysis", requirements: requirementPresets.summary },
       ...commonTasks,
     ],
   },
@@ -61,8 +146,8 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
     name: "Naha Banking",
     context: "Banking-related drafts, client summaries, process notes, reports, proposals, and product copy.",
     tasks: [
-      { id: "banking-documents", label: "Draft banking documents", description: "Create clear banking-related documents.", category: "Documentation" },
-      { id: "process-notes", label: "Create process notes", description: "Turn workflows into simple process documentation.", category: "Operations" },
+      { id: "banking-documents", label: "Draft banking documents", description: "Create clear banking documents with assumptions and compliance-sensitive wording flagged.", category: "Documentation", requirements: requirementPresets.document },
+      { id: "process-notes", label: "Create process notes", description: "Turn workflows into simple process documentation and tickable steps.", category: "Operations", requirements: requirementPresets.process },
       ...commonTasks,
     ],
   },
@@ -89,13 +174,13 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
 };
 
 const defaultRequirements: Requirements = {
-  outputType: "Business document",
+  outputType: "Information summary or business document",
   format: "Markdown",
   tone: "Professional and clear",
   audience: "Internal team",
   length: "Medium",
-  sections: "Purpose, Key points, Final output, Next steps",
-  constraints: "",
+  sections: "Executive summary, Key information, Draft output, Action items, Next steps",
+  constraints: "Produce a usable final output, not only advice. Make action items clear and practical.",
   imageRequirements: "",
 };
 
@@ -119,11 +204,15 @@ function App() {
   const [savedOutputs, setSavedOutputs] = useState<SavedOutput[]>([]);
   const [workTasks, setWorkTasks] = useState<WorkTask[]>([]);
   const [activeWorkTaskId, setActiveWorkTaskId] = useState("");
-  const [taskProjectFilter, setTaskProjectFilter] = useState<ProjectId | "all">("all");
-  const [viewMode, setViewMode] = useState<"dashboard" | "mobile">("dashboard");
+  const [viewMode, setViewMode] = useState<"work" | "projects" | "reminders" | "mobile">("work");
   const [quickTaskTitle, setQuickTaskTitle] = useState("");
   const [quickTaskDetails, setQuickTaskDetails] = useState("");
-  const [reminderIds, setReminderIds] = useState<string[]>([]);
+  const [quickChecklistDraft, setQuickChecklistDraft] = useState("");
+  const [quickChecklistItems, setQuickChecklistItems] = useState<ChecklistItem[]>([]);
+  const [quickChecklistItem, setQuickChecklistItem] = useState("");
+  const [mobileFullOpen, setMobileFullOpen] = useState(false);
+  const [reminderDrafts, setReminderDrafts] = useState<Record<string, string>>({});
+  const [now, setNow] = useState(() => Date.now());
   const [message, setMessage] = useState("");
 
   const project = projects[projectId];
@@ -132,12 +221,17 @@ function App() {
   const activeWorkTask = workTasks.find((item) => item.id === activeWorkTaskId);
   const projectDashboard = buildProjectDashboard(workTasks);
   const selectedProjectStats = projectDashboard.find((item) => item.projectId === projectId);
-  const visibleWorkTasks = taskProjectFilter === "all" ? workTasks : workTasks.filter((item) => item.projectId === taskProjectFilter);
-  const sortedWorkTasks = [...visibleWorkTasks].sort((a, b) => {
+  const projectWorkTasks = workTasks.filter((item) => item.projectId === projectId);
+  const sortedWorkTasks = [...workTasks].sort((a, b) => {
+    if (a.status !== b.status) return a.status === "Open" ? -1 : 1;
+    return priorityRank(b.priority) - priorityRank(a.priority) || dateValue(a.dueDate) - dateValue(b.dueDate);
+  });
+  const sortedProjectTasks = [...projectWorkTasks].sort((a, b) => {
     if (a.status !== b.status) return a.status === "Open" ? -1 : 1;
     return priorityRank(b.priority) - priorityRank(a.priority) || dateValue(a.dueDate) - dateValue(b.dueDate);
   });
   const summary = buildTaskSummary(workTasks);
+  const reminderPlanner = buildReminderPlanner(workTasks, now);
 
   const missingDetails = useMemo(() => {
     const missing: string[] = [];
@@ -154,16 +248,14 @@ function App() {
     async function loadDatabase() {
       try {
         await migrateLegacyStorage(taskStorageKey, outputStorageKey, reminderStorageKey);
-        const [dbTasks, dbOutputs, dbReminderIds] = await Promise.all([
+        const [dbTasks, dbOutputs] = await Promise.all([
           getTasks(),
           getOutputs(),
-          getMeta<string[]>("triggeredReminderIds", []),
         ]);
 
         if (!isMounted) return;
         setWorkTasks(dbTasks.map(normalizeWorkTask));
         setSavedOutputs(dbOutputs);
-        setReminderIds(dbReminderIds);
         setMessage(`Database loaded. Tasks and history are saved in ${getStorageBackendLabel()}.`);
       } catch (error) {
         setMessage(error instanceof Error ? `Database load failed: ${error.message}` : "Database load failed.");
@@ -178,31 +270,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    void setMeta("triggeredReminderIds", reminderIds);
-  }, [reminderIds]);
-
-  useEffect(() => {
     const timer = window.setInterval(() => {
-      const now = Date.now();
-      const dueReminders = workTasks.filter((item) => {
-        if (!item.reminderAt || item.status === "Closed" || reminderIds.includes(item.id)) return false;
-        return new Date(item.reminderAt).getTime() <= now;
-      });
-
-      if (dueReminders.length > 0) {
-        const reminderText = dueReminders.map((item) => `${projects[item.projectId].name}: ${item.title}`).join("\n");
-        setMessage(`Reminder reached: ${dueReminders.map((item) => item.title).join(", ")}`);
-        window.alert(`Task reminder\n\n${reminderText}`);
-        setReminderIds((current) => [...current, ...dueReminders.map((item) => item.id)]);
-      }
-    }, 30000);
+      setNow(Date.now());
+    }, 60000);
 
     return () => window.clearInterval(timer);
-  }, [reminderIds, workTasks]);
+  }, []);
 
   function updateProject(nextProjectId: ProjectId) {
     setProjectId(nextProjectId);
-    setTaskId(projects[nextProjectId].tasks[0].id);
+    const nextTaskId = projects[nextProjectId].tasks[0].id;
+    setTaskId(nextTaskId);
+    setRequirements(taskRequirements(nextProjectId, nextTaskId));
     setGptPrompt("");
     setResult("");
     setMessage("");
@@ -212,6 +291,18 @@ function App() {
     const next = { ...requirements, [key]: value };
     setRequirements(next);
     updateActiveWorkTask("requirements", next);
+  }
+
+  function selectTemplate(nextTaskId: string) {
+    setTaskId(nextTaskId);
+    const nextTemplate = project.tasks.find((item) => item.id === nextTaskId) ?? project.tasks[0];
+    const nextRequirements = taskRequirements(projectId, nextTaskId);
+    setRequirements(nextRequirements);
+    if (activeWorkTask) {
+      updateWorkTask(activeWorkTask.id, "templateId", nextTaskId);
+      updateWorkTask(activeWorkTask.id, "category", nextTemplate.category);
+      updateWorkTask(activeWorkTask.id, "requirements", nextRequirements);
+    }
   }
 
   function createWorkTask() {
@@ -225,8 +316,8 @@ function App() {
   }
 
   function createQuickTask() {
-    if (!quickTaskTitle.trim() && !quickTaskDetails.trim()) {
-      setMessage("Add a quick title or note first.");
+    if (!quickTaskTitle.trim() && !quickTaskDetails.trim() && quickChecklistItems.length === 0) {
+      setMessage("Add a quick title, note, or checklist item first.");
       return;
     }
 
@@ -236,10 +327,26 @@ function App() {
       taskProjectId: projectId,
       templateId: projects[projectId].tasks[0].id,
       category: "Mobile",
+      checklist: quickChecklistItems,
     });
     setQuickTaskTitle("");
     setQuickTaskDetails("");
+    setQuickChecklistDraft("");
+    setQuickChecklistItems([]);
     setMessage("Mobile task captured into the shared dashboard.");
+  }
+
+  function addQuickChecklistItem() {
+    if (!quickChecklistDraft.trim()) return;
+    setQuickChecklistItems((current) => [
+      ...current,
+      { id: createId(), text: quickChecklistDraft.trim(), done: false },
+    ]);
+    setQuickChecklistDraft("");
+  }
+
+  function removeQuickChecklistItem(id: string) {
+    setQuickChecklistItems((current) => current.filter((item) => item.id !== id));
   }
 
   function createTask({
@@ -248,12 +355,14 @@ function App() {
     taskProjectId,
     templateId,
     category,
+    checklist = [],
   }: {
     title: string;
     details: string;
     taskProjectId: ProjectId;
     templateId: string;
     category: string;
+    checklist?: ChecklistItem[];
   }) {
     const newTask: WorkTask = {
       id: createId(),
@@ -267,9 +376,10 @@ function App() {
       reminderAt: "",
       status: "Open",
       statusHistory: [{ status: "Open", changedAt: new Date().toISOString() }],
+      checklist,
       input: "",
       assets: [],
-      requirements: defaultRequirements,
+      requirements: taskRequirements(taskProjectId, templateId),
       gptPrompt: "",
       result: "",
       createdAt: new Date().toISOString(),
@@ -279,6 +389,34 @@ function App() {
     void saveTask(newTask);
     openWorkTask(newTask);
     setMessage("Work task created. Add dates or reminders if needed.");
+  }
+
+  function addChecklistItem() {
+    if (!activeWorkTask || !quickChecklistItem.trim()) return;
+    const nextChecklist = [
+      ...activeWorkTask.checklist,
+      { id: createId(), text: quickChecklistItem.trim(), done: false },
+    ];
+    updateWorkTask(activeWorkTask.id, "checklist", nextChecklist);
+    setQuickChecklistItem("");
+  }
+
+  function updateChecklistItem(itemId: string, patch: Partial<ChecklistItem>) {
+    if (!activeWorkTask) return;
+    updateWorkTask(
+      activeWorkTask.id,
+      "checklist",
+      activeWorkTask.checklist.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+    );
+  }
+
+  function removeChecklistItem(itemId: string) {
+    if (!activeWorkTask) return;
+    updateWorkTask(
+      activeWorkTask.id,
+      "checklist",
+      activeWorkTask.checklist.filter((item) => item.id !== itemId),
+    );
   }
 
   function updateWorkTask<K extends keyof WorkTask>(id: string, key: K, value: WorkTask[K]) {
@@ -296,9 +434,6 @@ function App() {
     );
     if (key === "projectId") setProjectId(value as ProjectId);
     if (key === "templateId") setTaskId(value as string);
-    if (key === "reminderAt") {
-      setReminderIds((current) => current.filter((itemId) => itemId !== id));
-    }
   }
 
   function updateActiveWorkTask<K extends keyof WorkTask>(key: K, value: WorkTask[K]) {
@@ -319,17 +454,72 @@ function App() {
     setMessage("Task opened in AI mode.");
   }
 
+  function openMobileTask(item: WorkTask, target: "details" | "ai") {
+    openWorkTask(item);
+    setViewMode("work");
+    window.setTimeout(() => {
+      document.getElementById(target === "details" ? "task-details-section" : "ai-workspace-section")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 80);
+  }
+
   function removeWorkTask(id: string) {
     setWorkTasks((current) => current.filter((item) => item.id !== id));
     void deleteTask(id);
-    setReminderIds((current) => current.filter((itemId) => itemId !== id));
     if (activeWorkTaskId === id) setActiveWorkTaskId("");
   }
 
   function saveTaskOnly() {
     if (!activeWorkTask) return;
-    updateWorkTask(activeWorkTask.id, "updatedAt", new Date().toISOString());
-    setMessage("Task saved. AI prompt/output is optional for this task.");
+    const reminderAt = reminderDrafts[activeWorkTask.id] ?? activeWorkTask.reminderAt;
+    const updated: WorkTask = {
+      ...activeWorkTask,
+      reminderAt,
+      updatedAt: new Date().toISOString(),
+    };
+    setWorkTasks((current) => current.map((item) => (item.id === activeWorkTask.id ? updated : item)));
+    void saveTask(updated);
+    setNow(Date.now());
+    setMessage("Task saved, including reminder date.");
+  }
+
+  function clearReminder(id: string) {
+    setReminderDrafts((current) => ({ ...current, [id]: "" }));
+    updateWorkTask(id, "reminderAt", "");
+    setMessage("Reminder cleared.");
+  }
+
+  function updateReminder(id: string, value: string) {
+    setReminderDrafts((current) => ({ ...current, [id]: value }));
+  }
+
+  function saveReminder(id: string) {
+    const taskToUpdate = workTasks.find((item) => item.id === id);
+    if (!taskToUpdate) return;
+    const value = reminderDrafts[id] ?? taskToUpdate.reminderAt;
+    const updated: WorkTask = {
+      ...taskToUpdate,
+      reminderAt: value,
+      updatedAt: new Date().toISOString(),
+    };
+    setWorkTasks((current) => current.map((item) => (item.id === id ? updated : item)));
+    void saveTask(updated);
+    setNow(Date.now());
+    setMessage(value ? "Reminder saved." : "Reminder cleared.");
+  }
+
+  function scheduleReminderToday(id: string) {
+    const value = localDatetimeValue(nextPlanningHour(now));
+    setReminderDrafts((current) => ({ ...current, [id]: value }));
+    updateWorkTask(id, "reminderAt", value);
+    setNow(Date.now());
+    setMessage("Reminder scheduled for today.");
+  }
+
+  function reminderValue(task: WorkTask) {
+    return reminderDrafts[task.id] ?? task.reminderAt;
   }
 
   async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -346,9 +536,12 @@ function App() {
         }
 
         const isDocx = /\.docx$/i.test(file.name);
+        const isPptx = /\.pptx$/i.test(file.name);
         const canReadText = file.type.startsWith("text/") || /\.(md|txt|csv|json|html)$/i.test(file.name);
         const content = isDocx
           ? await readDocxText(file)
+          : isPptx
+            ? await readPptxText(file)
           : canReadText
             ? await file.text()
             : "This file is attached but cannot be read in the browser. For PDF or scanned files, paste the important text into the input box.";
@@ -356,7 +549,7 @@ function App() {
         return {
           id: createId(),
           name: file.name,
-          type: canReadText || isDocx ? ("text" as const) : ("file" as const),
+          type: canReadText || isDocx || isPptx ? ("text" as const) : ("file" as const),
           content,
         };
       }),
@@ -377,7 +570,7 @@ function App() {
       return;
     }
 
-    const prompt = buildFullLlmPrompt(project.name, project.context, input, assets, requirements);
+    const prompt = buildFullLlmPrompt(project.name, project.context, task.label, activeWorkTask?.checklist ?? [], input, assets, requirements);
     setGptPrompt(prompt);
     updateActiveWorkTask("gptPrompt", prompt);
     updateActiveWorkTask("input", input);
@@ -461,14 +654,27 @@ function App() {
           <p className="eyebrow">Functional AI Workbench</p>
           <h1>Project work assistant</h1>
         </div>
-        <button className="ghost-button" onClick={clearWorkspace} type="button">
-          <Trash2 size={16} />
-          Clear
-        </button>
-        <button className="ghost-button" onClick={() => setViewMode(viewMode === "dashboard" ? "mobile" : "dashboard")} type="button">
-          <Smartphone size={16} />
-          {viewMode === "dashboard" ? "Mobile view" : "Dashboard view"}
-        </button>
+        <div className="topbar-actions">
+          <button className={viewMode === "work" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("work")} type="button">
+            <ListTodo size={16} />
+            Work
+          </button>
+          <button className={viewMode === "projects" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("projects")} type="button">
+            <BarChart3 size={16} />
+            Projects
+          </button>
+          <button className={viewMode === "reminders" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("reminders")} type="button">
+            <CalendarClock size={16} />
+            Reminders
+          </button>
+          <button className={viewMode === "mobile" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("mobile")} type="button">
+            <Smartphone size={16} />
+            Mobile
+          </button>
+          <button className="ghost-button" onClick={clearWorkspace} type="button" title="Clear current AI workspace">
+            <Trash2 size={16} />
+          </button>
+        </div>
       </section>
 
       {viewMode === "mobile" && (
@@ -496,6 +702,44 @@ function App() {
               Notes
               <textarea className="small-textarea" value={quickTaskDetails} onChange={(event) => setQuickTaskDetails(event.target.value)} placeholder="Type or paste notes from your phone." />
             </label>
+            <div className="mobile-checklist-capture">
+              <label>
+                Checklist items
+                <div className="checklist-add">
+                  <input
+                    value={quickChecklistDraft}
+                    onChange={(event) => setQuickChecklistDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") addQuickChecklistItem();
+                    }}
+                    placeholder="Add item to tick off"
+                  />
+                  <button className="primary-button" onClick={addQuickChecklistItem} type="button" title="Add checklist item">
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </label>
+              {quickChecklistItems.length > 0 && (
+                <div className="checklist-list">
+                  {quickChecklistItems.map((item) => (
+                    <div className="checklist-item" key={item.id}>
+                      <input checked={false} readOnly type="checkbox" />
+                      <input
+                        value={item.text}
+                        onChange={(event) =>
+                          setQuickChecklistItems((current) =>
+                            current.map((currentItem) => currentItem.id === item.id ? { ...currentItem, text: event.target.value } : currentItem),
+                          )
+                        }
+                      />
+                      <button className="ghost-button" onClick={() => removeQuickChecklistItem(item.id)} type="button" title="Remove checklist item">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <button className="primary-button" onClick={createQuickTask} type="button">
               <Save size={16} />
               Save mobile task
@@ -509,20 +753,150 @@ function App() {
             </h2>
             <div className="mobile-task-list">
               {sortedWorkTasks.map((item) => (
-                <button key={item.id} className={taskClassName(item, activeWorkTaskId)} onClick={() => openWorkTask(item)} type="button">
-                  <span>
+                <article key={item.id} className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
+                  <div>
                     <strong>{item.title}</strong>
                     <small>{projects[item.projectId].name} - {item.status}</small>
-                  </span>
-                  <small>{taskDateLabel(item)}</small>
-                </button>
+                    <small>{taskDateLabel(item)}</small>
+                  </div>
+                  <div className="mobile-task-actions">
+                    <button className="ghost-button" onClick={() => openMobileTask(item, "details")} type="button">
+                      <ListTodo size={15} />
+                      Task details
+                    </button>
+                    <button className="primary-button" onClick={() => openMobileTask(item, "ai")} type="button">
+                      <Sparkles size={15} />
+                      AI prompt
+                    </button>
+                  </div>
+                </article>
               ))}
+            </div>
+          </section>
+
+          <section className="panel mobile-full-panel">
+            <button className="ghost-button mobile-full-toggle" onClick={() => setMobileFullOpen((current) => !current)} type="button">
+              <BriefcaseBusiness size={16} />
+              {mobileFullOpen ? "Close full functionality" : "Open full functionality"}
+            </button>
+            {mobileFullOpen && (
+              <div className="mobile-full-content">
+                <p className="context-copy">Use the main work area for templates, full task editing, prompts, uploads, output saving, and project history.</p>
+                <button className="primary-button" onClick={() => setViewMode("work")} type="button">
+                  <ArrowRight size={16} />
+                  Go to full work view
+                </button>
+                <button className="ghost-button" onClick={() => setViewMode("reminders")} type="button">
+                  <CalendarClock size={16} />
+                  Open reminder planner
+                </button>
+              </div>
+            )}
+          </section>
+        </section>
+      )}
+
+      {viewMode === "reminders" && (
+        <section className="reminder-page">
+          <section className="panel reminder-hero">
+            <div>
+              <p className="eyebrow">Reminder planner</p>
+              <h2>
+                <CalendarClock size={18} />
+                Plan today and upcoming work
+              </h2>
+              <p className="context-copy">
+                Reminders are now reviewed here instead of appearing as browser alerts. Overdue and today items are shown from the saved reminder date.
+              </p>
+            </div>
+            <div className="reminder-metrics">
+              <span><strong>{reminderPlanner.overdue.length}</strong> overdue</span>
+              <span><strong>{reminderPlanner.today.length}</strong> today</span>
+              <span><strong>{reminderPlanner.upcoming.length}</strong> upcoming</span>
+            </div>
+          </section>
+
+          <section className="reminder-columns">
+            <ReminderColumn
+              emptyText="No overdue reminders."
+              items={reminderPlanner.overdue}
+              now={now}
+              onClear={clearReminder}
+              onOpen={(item) => {
+                openWorkTask(item);
+                setViewMode("work");
+              }}
+              onSave={saveReminder}
+              onSchedule={updateReminder}
+              reminderValue={reminderValue}
+              title="Overdue"
+            />
+            <ReminderColumn
+              emptyText="Nothing planned for today."
+              items={reminderPlanner.today}
+              now={now}
+              onClear={clearReminder}
+              onOpen={(item) => {
+                openWorkTask(item);
+                setViewMode("work");
+              }}
+              onSave={saveReminder}
+              onSchedule={updateReminder}
+              reminderValue={reminderValue}
+              title="Today"
+            />
+            <ReminderColumn
+              emptyText="No upcoming reminders."
+              items={reminderPlanner.upcoming}
+              now={now}
+              onClear={clearReminder}
+              onOpen={(item) => {
+                openWorkTask(item);
+                setViewMode("work");
+              }}
+              onSave={saveReminder}
+              onSchedule={updateReminder}
+              reminderValue={reminderValue}
+              title="Upcoming"
+            />
+          </section>
+
+          <section className="panel">
+            <div className="result-header">
+              <h2>
+                <ListTodo size={18} />
+                Tasks without reminders
+              </h2>
+              <span className="subtle-count">{reminderPlanner.unscheduled.length} open tasks</span>
+            </div>
+            <div className="reminder-list">
+              {reminderPlanner.unscheduled.map((item) => (
+                <div className="reminder-row" key={item.id}>
+                  <button className="reminder-title" onClick={() => openWorkTask(item)} type="button">
+                    <strong>{item.title}</strong>
+                    <span>{projects[item.projectId].name} - {item.category} - {item.priority}</span>
+                  </button>
+                  <button className="ghost-button" onClick={() => scheduleReminderToday(item.id)} type="button">
+                    <CalendarClock size={15} />
+                    Plan today
+                  </button>
+                  <label>
+                    Reminder
+                    <input value={reminderValue(item)} onChange={(event) => updateReminder(item.id, event.target.value)} type="datetime-local" />
+                  </label>
+                  <button className="primary-button" onClick={() => saveReminder(item.id)} type="button">
+                    <Save size={15} />
+                    Save reminder
+                  </button>
+                </div>
+              ))}
+              {reminderPlanner.unscheduled.length === 0 && <p className="empty">Every open task has a reminder, or there are no open tasks.</p>}
             </div>
           </section>
         </section>
       )}
 
-      {viewMode === "dashboard" && (
+      {viewMode === "projects" && (
         <>
 
       <section className="summary-grid">
@@ -565,7 +939,14 @@ function App() {
         </div>
         <div className="project-dashboard-grid">
           {projectDashboard.map((item) => (
-            <button key={item.projectId} className={projectId === item.projectId ? "project-dashboard-card active" : "project-dashboard-card"} onClick={() => updateProject(item.projectId)} type="button">
+            <button
+              key={item.projectId}
+              className={projectId === item.projectId ? "project-dashboard-card active" : "project-dashboard-card"}
+              onClick={() => {
+                updateProject(item.projectId);
+              }}
+              type="button"
+            >
               <strong>{projects[item.projectId].name}</strong>
               <span>{item.total} tasks</span>
               <div className="mini-status-grid">
@@ -578,6 +959,47 @@ function App() {
           ))}
         </div>
       </section>
+
+      <section className="panel dashboard-panel">
+        <div className="result-header">
+          <h2>
+            <BriefcaseBusiness size={18} />
+            {project.name} details
+          </h2>
+          <button className="primary-button" onClick={() => setViewMode("work")} type="button">
+            <ArrowRight size={16} />
+            Open project work
+          </button>
+        </div>
+        <p className="context-copy">{project.context}</p>
+        {selectedProjectStats && (
+          <div className="project-stat-list project-stat-columns">
+            {taskStatuses.map((status) => (
+              <div className={`project-stat-row status-${statusSlug(status)}`} key={status}>
+                <span>{status}</span>
+                <strong>{selectedProjectStats[statusKey(status)]}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="project-detail-list">
+          {sortedProjectTasks.slice(0, 8).map((item) => (
+            <button key={item.id} className={taskClassName(item, activeWorkTaskId)} onClick={() => openWorkTask(item)} type="button">
+              <span>
+                <strong>{item.title}</strong>
+                <small>{item.category} - {item.priority} - {item.status}</small>
+              </span>
+              <small>{taskDateLabel(item)}</small>
+            </button>
+          ))}
+          {sortedProjectTasks.length === 0 && <p className="empty">No tasks have been created for this project yet.</p>}
+        </div>
+      </section>
+        </>
+      )}
+
+      {viewMode === "work" && (
+        <>
 
       <section className="workflow">
         <div className="step done">View tasks</div>
@@ -594,7 +1016,7 @@ function App() {
           <section className="panel">
             <h2>
               <BriefcaseBusiness size={18} />
-              Project
+              Active project
             </h2>
             <div className="project-grid">
               {(Object.keys(projects) as ProjectId[]).map((id) => (
@@ -608,19 +1030,15 @@ function App() {
 
           <section className="panel">
             <h2>
-              <BarChart3 size={18} />
-              Project status
+              <ListTodo size={18} />
+              Project tasks
             </h2>
-            {selectedProjectStats && (
-              <div className="project-stat-list">
-                {taskStatuses.map((status) => (
-                  <div className={`project-stat-row status-${statusSlug(status)}`} key={status}>
-                    <span>{status}</span>
-                    <strong>{selectedProjectStats[statusKey(status)]}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="project-stat-list">
+              <div className="project-stat-row status-open"><span>Open</span><strong>{selectedProjectStats?.open ?? 0}</strong></div>
+              <div className="project-stat-row status-in-progress"><span>In progress</span><strong>{selectedProjectStats?.inProgress ?? 0}</strong></div>
+              <div className="project-stat-row status-blocked"><span>Blocked</span><strong>{selectedProjectStats?.blocked ?? 0}</strong></div>
+              <div className="project-stat-row status-closed"><span>Closed</span><strong>{selectedProjectStats?.closed ?? 0}</strong></div>
+            </div>
           </section>
 
           <section className="panel">
@@ -630,7 +1048,7 @@ function App() {
             </h2>
             <div className="task-list">
               {project.tasks.map((item) => (
-                <button key={item.id} className={taskId === item.id ? "task-card selected" : "task-card"} onClick={() => setTaskId(item.id)} type="button">
+                <button key={item.id} className={taskId === item.id ? "task-card selected" : "task-card"} onClick={() => selectTemplate(item.id)} type="button">
                   <strong>{item.label}</strong>
                   <span>{item.category} - {item.description}</span>
                 </button>
@@ -663,35 +1081,22 @@ function App() {
             <div className="result-header">
               <h2>
                 <ListTodo size={18} />
-                All tasks
+                {project.name} tasks
               </h2>
               <button className="primary-button" onClick={createWorkTask} type="button">
                 <ListTodo size={16} />
                 New task
               </button>
             </div>
-            <div className="filter-row">
-              <label>
-                View by project
-                <select value={taskProjectFilter} onChange={(event) => setTaskProjectFilter(event.target.value as ProjectId | "all")}>
-                  <option value="all">All projects</option>
-                  {(Object.keys(projects) as ProjectId[]).map((id) => (
-                    <option key={id} value={id}>
-                      {projects[id].name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {sortedWorkTasks.length === 0 ? (
-              <p className="empty">Create your first task. Tasks appear here across all projects, then expand into AI mode when selected.</p>
+            {sortedProjectTasks.length === 0 ? (
+              <p className="empty">Create your first task for {project.name}. It can be a document, summary, email, or a checklist-style task.</p>
             ) : (
               <div className="all-task-list">
-                {sortedWorkTasks.map((item) => (
+                {sortedProjectTasks.map((item) => (
                   <button key={item.id} className={taskClassName(item, activeWorkTaskId)} onClick={() => openWorkTask(item)} type="button">
                     <span>
                       <strong>{item.title}</strong>
-                      <small>{projects[item.projectId].name} - {item.category} - {item.priority} - {item.status}</small>
+                      <small>{item.category} - {item.priority} - {item.status}</small>
                     </span>
                     <small>{taskDateLabel(item)}</small>
                   </button>
@@ -701,7 +1106,7 @@ function App() {
           </section>
 
           {activeWorkTask ? (
-            <section className="panel">
+            <section className="panel" id="task-details-section">
               <div className="result-header">
                 <h2>
                   <ListTodo size={18} />
@@ -713,7 +1118,7 @@ function App() {
                 </button>
               </div>
               <div className="task-status-strip">
-                <span className={`status-pill status-${activeWorkTask.status.toLowerCase()}`}>{activeWorkTask.status}</span>
+                <span className={`status-pill status-${statusSlug(activeWorkTask.status)}`}>{activeWorkTask.status}</span>
                 <span className={`priority-pill priority-${activeWorkTask.priority.toLowerCase()}`}>{activeWorkTask.priority}</span>
                 {activeWorkTask.reminderAt && (
                   <span className="reminder-pill">
@@ -722,7 +1127,22 @@ function App() {
                   </span>
                 )}
               </div>
-              <TaskEditor task={activeWorkTask} onChange={updateWorkTask} />
+              <TaskEditor
+                task={activeWorkTask}
+                onChange={updateWorkTask}
+                onReminderChange={updateReminder}
+                onReminderSave={saveReminder}
+                reminderValue={reminderValue(activeWorkTask)}
+                onTemplateChange={(nextProjectId, nextTemplateId) => {
+                  const nextRequirements = taskRequirements(nextProjectId, nextTemplateId);
+                  const nextTemplate = projects[nextProjectId].tasks.find((item) => item.id === nextTemplateId) ?? projects[nextProjectId].tasks[0];
+                  setTaskId(nextTemplateId);
+                  setRequirements(nextRequirements);
+                  updateWorkTask(activeWorkTask.id, "templateId", nextTemplateId);
+                  updateWorkTask(activeWorkTask.id, "category", nextTemplate.category);
+                  updateWorkTask(activeWorkTask.id, "requirements", nextRequirements);
+                }}
+              />
               <label>
                 Task notes and details
                 <textarea
@@ -732,6 +1152,45 @@ function App() {
                   placeholder="Record task background, decisions, follow-up notes, or status details here."
                 />
               </label>
+              <section className="checklist-panel">
+                <div className="result-header">
+                  <h3>
+                    <CheckSquare size={17} />
+                    Checklist
+                  </h3>
+                  <span>{activeWorkTask.checklist.filter((item) => item.done).length}/{activeWorkTask.checklist.length} done</span>
+                </div>
+                <div className="checklist-add">
+                  <input
+                    value={quickChecklistItem}
+                    onChange={(event) => setQuickChecklistItem(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") addChecklistItem();
+                    }}
+                    placeholder="Add shopping item, follow-up, or subtask"
+                  />
+                  <button className="primary-button" onClick={addChecklistItem} type="button" title="Add checklist item">
+                    <Plus size={16} />
+                  </button>
+                </div>
+                <div className="checklist-list">
+                  {activeWorkTask.checklist.map((item) => (
+                    <div className={item.done ? "checklist-item done" : "checklist-item"} key={item.id}>
+                      <input
+                        aria-label={`Complete ${item.text}`}
+                        checked={item.done}
+                        onChange={(event) => updateChecklistItem(item.id, { done: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <input value={item.text} onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })} />
+                      <button className="ghost-button" onClick={() => removeChecklistItem(item.id)} type="button" title="Remove checklist item">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                  {activeWorkTask.checklist.length === 0 && <p className="empty">Add items here for shopping lists, subtasks, or simple tick-off work.</p>}
+                </div>
+              </section>
               <p className="context-copy">
                 Created {new Date(activeWorkTask.createdAt).toLocaleString()} - Updated {new Date(activeWorkTask.updatedAt).toLocaleString()}
               </p>
@@ -771,7 +1230,7 @@ function App() {
 
           {activeWorkTask && (
             <>
-              <section className="panel">
+              <section className="panel" id="ai-workspace-section">
                 <h2>
                   <FileText size={18} />
                   Input
@@ -787,7 +1246,7 @@ function App() {
                 />
                 <label className="upload-control">
                   <Upload size={17} />
-                  Upload text files or images
+                  Upload documents, presentations, or images
                   <input multiple onChange={handleFiles} type="file" />
                 </label>
                 {assets.length > 0 && (
@@ -925,7 +1384,21 @@ function App() {
   );
 }
 
-function TaskEditor({ task, onChange }: { task: WorkTask; onChange: <K extends keyof WorkTask>(id: string, key: K, value: WorkTask[K]) => void }) {
+function TaskEditor({
+  task,
+  onChange,
+  onReminderChange,
+  onReminderSave,
+  onTemplateChange,
+  reminderValue,
+}: {
+  task: WorkTask;
+  onChange: <K extends keyof WorkTask>(id: string, key: K, value: WorkTask[K]) => void;
+  onReminderChange: (id: string, value: string) => void;
+  onReminderSave: (id: string) => void;
+  onTemplateChange: (projectId: ProjectId, templateId: string) => void;
+  reminderValue: string;
+}) {
   const availableTemplates = projects[task.projectId].tasks;
 
   return (
@@ -936,8 +1409,9 @@ function TaskEditor({ task, onChange }: { task: WorkTask; onChange: <K extends k
           value={task.projectId}
           onChange={(event) => {
             const nextProjectId = event.target.value as ProjectId;
+            const nextTemplateId = projects[nextProjectId].tasks[0].id;
             onChange(task.id, "projectId", nextProjectId);
-            onChange(task.id, "templateId", projects[nextProjectId].tasks[0].id);
+            onTemplateChange(nextProjectId, nextTemplateId);
           }}
         >
           {(Object.keys(projects) as ProjectId[]).map((id) => (
@@ -949,7 +1423,7 @@ function TaskEditor({ task, onChange }: { task: WorkTask; onChange: <K extends k
       </label>
       <label>
         AI task type
-        <select value={task.templateId} onChange={(event) => onChange(task.id, "templateId", event.target.value)}>
+        <select value={task.templateId} onChange={(event) => onTemplateChange(task.projectId, event.target.value)}>
           {availableTemplates.map((template) => (
             <option key={template.id} value={template.id}>
               {template.label}
@@ -980,7 +1454,13 @@ function TaskEditor({ task, onChange }: { task: WorkTask; onChange: <K extends k
       </label>
       <label>
         Reminder
-        <input value={task.reminderAt} onChange={(event) => onChange(task.id, "reminderAt", event.target.value)} type="datetime-local" />
+        <div className="inline-save-field">
+          <input value={reminderValue} onChange={(event) => onReminderChange(task.id, event.target.value)} type="datetime-local" />
+          <button className="primary-button" onClick={() => onReminderSave(task.id)} type="button">
+            <Save size={15} />
+            Save
+          </button>
+        </div>
       </label>
       <label>
         Status
@@ -991,6 +1471,63 @@ function TaskEditor({ task, onChange }: { task: WorkTask; onChange: <K extends k
         </select>
       </label>
     </div>
+  );
+}
+
+function ReminderColumn({
+  emptyText,
+  items,
+  now,
+  onClear,
+  onOpen,
+  onSave,
+  onSchedule,
+  reminderValue,
+  title,
+}: {
+  emptyText: string;
+  items: WorkTask[];
+  now: number;
+  onClear: (id: string) => void;
+  onOpen: (task: WorkTask) => void;
+  onSave: (id: string) => void;
+  onSchedule: (id: string, value: string) => void;
+  reminderValue: (task: WorkTask) => string;
+  title: string;
+}) {
+  return (
+    <section className="panel reminder-column">
+      <div className="result-header">
+        <h2>
+          <CalendarClock size={18} />
+          {title}
+        </h2>
+        <span className="subtle-count">{items.length}</span>
+      </div>
+      <div className="reminder-list">
+        {items.map((item) => (
+          <div className={`reminder-row ${reminderState(item, now)}`} key={item.id}>
+            <button className="reminder-title" onClick={() => onOpen(item)} type="button">
+              <strong>{item.title}</strong>
+              <span>{projects[item.projectId].name} - {item.category} - {item.priority}</span>
+              <small>{reminderLabel(item, now)}</small>
+            </button>
+            <label>
+              Reminder
+              <input value={reminderValue(item)} onChange={(event) => onSchedule(item.id, event.target.value)} type="datetime-local" />
+            </label>
+            <button className="primary-button" onClick={() => onSave(item.id)} type="button">
+              <Save size={15} />
+              Save
+            </button>
+            <button className="ghost-button" onClick={() => onClear(item.id)} type="button">
+              Clear
+            </button>
+          </div>
+        ))}
+        {items.length === 0 && <p className="empty">{emptyText}</p>}
+      </div>
+    </section>
   );
 }
 
@@ -1014,9 +1551,10 @@ function normalizeWorkTask(task: WorkTask): WorkTask {
     statusHistory: task.statusHistory?.length
       ? task.statusHistory.map((entry) => ({ ...entry, status: normalizeStatus(entry.status) }))
       : [{ status: normalizeStatus(task.status), changedAt: task.updatedAt || task.createdAt || new Date().toISOString() }],
+    checklist: task.checklist?.map((item) => ({ ...item, done: Boolean(item.done) })) ?? [],
     input: task.input ?? "",
     assets: task.assets ?? [],
-    requirements: task.requirements ?? defaultRequirements,
+    requirements: task.requirements ?? taskRequirements(fallbackProjectId, fallbackTemplateId),
     gptPrompt: task.gptPrompt ?? "",
     result: task.result ?? "",
     createdAt: task.createdAt || new Date().toISOString(),
@@ -1024,12 +1562,19 @@ function normalizeWorkTask(task: WorkTask): WorkTask {
   };
 }
 
+function taskRequirements(projectId: ProjectId, templateId: string): Requirements {
+  const template = projects[projectId].tasks.find((item) => item.id === templateId);
+  return { ...(template?.requirements ?? defaultRequirements) };
+}
+
 function priorityRank(priority: Priority) {
   return { Low: 1, Normal: 2, High: 3, Urgent: 4 }[priority] ?? 0;
 }
 
 function dateValue(date: string) {
-  return date ? new Date(date).getTime() : Number.MAX_SAFE_INTEGER;
+  if (!date) return Number.MAX_SAFE_INTEGER;
+  const value = new Date(date).getTime();
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
 }
 
 function buildTaskSummary(tasks: WorkTask[]) {
@@ -1041,7 +1586,26 @@ function buildTaskSummary(tasks: WorkTask[]) {
     blocked: tasks.filter((item) => item.status === "Blocked").length,
     closed: tasks.filter((item) => item.status === "Closed").length,
     urgent: tasks.filter((item) => item.status !== "Closed" && item.priority === "Urgent").length,
-    reminders: tasks.filter((item) => item.status !== "Closed" && item.reminderAt && new Date(item.reminderAt).getTime() <= now).length,
+    reminders: tasks.filter((item) => item.status !== "Closed" && isValidDateTime(item.reminderAt) && new Date(item.reminderAt).getTime() <= now).length,
+  };
+}
+
+function buildReminderPlanner(tasks: WorkTask[], now: number) {
+  const openTasks = tasks.filter((item) => item.status !== "Closed");
+  const planned = openTasks
+    .filter((item) => isValidDateTime(item.reminderAt))
+    .sort((a, b) => dateValue(a.reminderAt) - dateValue(b.reminderAt));
+
+  return {
+    overdue: planned.filter((item) => dateValue(item.reminderAt) < startOfToday(now)),
+    today: planned.filter((item) => {
+      const value = dateValue(item.reminderAt);
+      return value >= startOfToday(now) && value < startOfTomorrow(now);
+    }),
+    upcoming: planned.filter((item) => dateValue(item.reminderAt) >= startOfTomorrow(now)),
+    unscheduled: openTasks
+      .filter((item) => !isValidDateTime(item.reminderAt))
+      .sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority) || dateValue(a.dueDate) - dateValue(b.dueDate)),
   };
 }
 
@@ -1073,6 +1637,23 @@ function taskDateLabel(task: WorkTask) {
   return "No due date";
 }
 
+function reminderLabel(task: WorkTask, now: number) {
+  if (!isValidDateTime(task.reminderAt)) return "No reminder";
+  const value = dateValue(task.reminderAt);
+  const dateText = new Date(value).toLocaleString();
+  if (value < startOfToday(now)) return `Overdue: ${dateText}`;
+  if (value < startOfTomorrow(now)) return `Today: ${dateText}`;
+  return `Upcoming: ${dateText}`;
+}
+
+function reminderState(task: WorkTask, now: number) {
+  if (!isValidDateTime(task.reminderAt)) return "unscheduled";
+  const value = dateValue(task.reminderAt);
+  if (value < startOfToday(now)) return "overdue";
+  if (value < startOfTomorrow(now)) return "today";
+  return "upcoming";
+}
+
 function isOverdue(task: WorkTask) {
   if (!task.dueDate || task.status === "Closed") return false;
   const today = new Date();
@@ -1081,7 +1662,35 @@ function isOverdue(task: WorkTask) {
 }
 
 function isReminderDue(task: WorkTask) {
-  return Boolean(task.reminderAt && task.status !== "Closed" && new Date(task.reminderAt).getTime() <= Date.now());
+  return Boolean(isValidDateTime(task.reminderAt) && task.status !== "Closed" && new Date(task.reminderAt).getTime() <= Date.now());
+}
+
+function isValidDateTime(value: string) {
+  return Boolean(value && Number.isFinite(new Date(value).getTime()));
+}
+
+function startOfToday(now: number) {
+  const date = new Date(now);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function startOfTomorrow(now: number) {
+  const date = new Date(startOfToday(now));
+  date.setDate(date.getDate() + 1);
+  return date.getTime();
+}
+
+function nextPlanningHour(now: number) {
+  const date = new Date(now);
+  date.setMinutes(0, 0, 0);
+  date.setHours(Math.min(date.getHours() + 1, 17));
+  return date;
+}
+
+function localDatetimeValue(date: Date) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
 }
 
 function statusSlug(status: TaskStatus) {
@@ -1110,6 +1719,60 @@ async function readDocxText(file: File) {
   return result.value.trim() || "The DOCX file was read, but no text content was found.";
 }
 
+async function readPptxText(file: File) {
+  const { default: JSZip } = await import("jszip");
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const slideFiles = Object.keys(zip.files)
+    .filter((path) => /^ppt\/slides\/slide\d+\.xml$/i.test(path))
+    .sort(comparePptxPartNames);
+  const noteFiles = Object.keys(zip.files)
+    .filter((path) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(path))
+    .sort(comparePptxPartNames);
+
+  const slideSections = await Promise.all(
+    slideFiles.map(async (path, index) => {
+      const xml = await zip.files[path].async("text");
+      const text = extractPresentationXmlText(xml);
+      return text ? `Slide ${index + 1}\n${text}` : "";
+    }),
+  );
+  const noteSections = await Promise.all(
+    noteFiles.map(async (path, index) => {
+      const xml = await zip.files[path].async("text");
+      const text = extractPresentationXmlText(xml);
+      return text ? `Speaker notes ${index + 1}\n${text}` : "";
+    }),
+  );
+  const extracted = [...slideSections, ...noteSections].filter(Boolean).join("\n\n").trim();
+
+  return extracted || "The PPTX file was read, but no slide text or speaker notes were found.";
+}
+
+function comparePptxPartNames(left: string, right: string) {
+  return pptxPartNumber(left) - pptxPartNumber(right);
+}
+
+function pptxPartNumber(path: string) {
+  return Number(path.match(/(\d+)\.xml$/)?.[1] ?? 0);
+}
+
+function extractPresentationXmlText(xml: string) {
+  const matches = [...xml.matchAll(/<a:t[^>]*>([\s\S]*?)<\/a:t>/g)];
+  return matches
+    .map((match) => decodeXmlText(match[1]).trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function decodeXmlText(value: string) {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
 function buildClarifyingQuestions(projectName: string, taskLabel: string, missingDetails: string[]) {
   return [
     "# Clarifying details needed",
@@ -1127,6 +1790,8 @@ function buildClarifyingQuestions(projectName: string, taskLabel: string, missin
 function buildFullLlmPrompt(
   projectName: string,
   projectContext: string,
+  taskLabel: string,
+  checklist: ChecklistItem[],
   input: string,
   assets: InputAsset[],
   requirements: Requirements,
@@ -1142,6 +1807,7 @@ function buildFullLlmPrompt(
     "PROJECT",
     `Name: ${projectName}`,
     `Context: ${projectContext}`,
+    `Task template: ${taskLabel}`,
     "",
     "OUTPUT REQUIREMENTS",
     `Output type: ${requirements.outputType}`,
@@ -1156,6 +1822,11 @@ function buildFullLlmPrompt(
     "SOURCE INPUT",
     input.trim() || "No typed input provided.",
     "",
+    "TASK CHECKLIST OR SHOPPING LIST",
+    checklist.length
+      ? checklist.map((item) => `- [${item.done ? "x" : " "}] ${item.text}`).join("\n")
+      : "No checklist items added.",
+    "",
     "READABLE FILE CONTENT",
     readableFiles.length ? readableFiles.map((asset) => `--- ${asset.name} ---\n${asset.content}`).join("\n\n") : "No readable text files attached.",
     "",
@@ -1166,7 +1837,11 @@ function buildFullLlmPrompt(
     unreadableFiles.length ? unreadableFiles.map((asset) => `- ${asset.name}: ${asset.content}`).join("\n") : "No other attachments.",
     "",
     "INSTRUCTIONS",
-    "Create the requested output as a new, business-ready document. Do not summarize the prompt. Use all relevant source material. Ask clarifying questions only if required information is genuinely missing.",
+    "Create the requested output as a new, business-ready document, summary, or email draft according to the selected output type.",
+    "If the requested output is an email, include a usable subject line and email body.",
+    "If the requested output is a summary, distinguish confirmed information, assumptions, risks, gaps, and action items.",
+    "If the task checklist contains open items, include them as action items or a tickable checklist when relevant.",
+    "Do not summarize the prompt. Use all relevant source material. Ask clarifying questions only if required information is genuinely missing.",
   ].join("\n");
 }
 

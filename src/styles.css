@@ -62,9 +62,123 @@ button:disabled {
   gap: 10px;
 }
 
+.nav-button {
+  background: #ffffff;
+  border-color: #d8ddff;
+  font-weight: 800;
+}
+
+.nav-button.active {
+  background: #17201b;
+  border-color: #17201b;
+  color: #ffffff;
+}
+
 .mobile-shell {
   display: grid;
   gap: 16px;
+}
+
+.reminder-page {
+  display: grid;
+  gap: 16px;
+}
+
+.reminder-hero {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.reminder-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(86px, 1fr));
+}
+
+.reminder-metrics span,
+.subtle-count {
+  background: #f4f6ff;
+  border: 1px solid #dfe5ff;
+  border-radius: 8px;
+  color: #495170;
+  font-weight: 900;
+  padding: 9px 10px;
+}
+
+.reminder-metrics strong {
+  color: #17201b;
+  display: block;
+  font-size: 1.35rem;
+}
+
+.reminder-columns {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reminder-column {
+  min-height: 220px;
+}
+
+.reminder-list {
+  display: grid;
+  gap: 10px;
+}
+
+.reminder-row {
+  align-items: center;
+  border: 1px solid #e0e5ff;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 240px) auto auto;
+  padding: 10px;
+}
+
+.reminder-row.overdue {
+  background: #fff0f4;
+  border-color: #ff9bb7;
+}
+
+.reminder-row.today {
+  background: #fffaf0;
+  border-color: #ffd166;
+}
+
+.reminder-row.upcoming {
+  background: #f3fffb;
+  border-color: #90efd4;
+}
+
+.reminder-title {
+  align-items: start;
+  border: 0;
+  display: grid;
+  gap: 3px;
+  justify-content: stretch;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.reminder-title span,
+.reminder-title small {
+  color: #607168;
+}
+
+.inline-save-field {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.inline-save-field input {
+  margin-top: 0;
 }
 
 .mobile-capture {
@@ -81,11 +195,58 @@ button:disabled {
   min-height: 74px;
 }
 
+.mobile-task-card {
+  align-items: stretch;
+  padding: 12px;
+}
+
+.mobile-task-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-task-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.mobile-task-actions button {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
 .mobile-capture textarea {
   min-height: 120px;
 }
 
 .mobile-capture .primary-button {
+  width: 100%;
+}
+
+.mobile-checklist-capture {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-full-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-full-toggle {
+  width: 100%;
+}
+
+.mobile-full-content {
+  border-top: 1px solid #e0e5ff;
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.mobile-full-content .primary-button,
+.mobile-full-content .ghost-button {
   width: 100%;
 }
 
@@ -431,6 +592,17 @@ h2 {
   gap: 8px;
 }
 
+.project-stat-columns {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.project-detail-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 .project-stat-row {
   align-items: center;
   display: flex;
@@ -445,6 +617,66 @@ h2 {
   gap: 6px;
   margin-top: 12px;
   padding: 12px;
+}
+
+.checklist-panel {
+  background: #fbfcfb;
+  border: 1px solid #e0e5ff;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.checklist-panel h3 {
+  align-items: center;
+  display: flex;
+  font-size: 0.98rem;
+  gap: 8px;
+  margin: 0;
+}
+
+.checklist-panel .result-header span {
+  color: #5b6860;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.checklist-add,
+.checklist-item {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+}
+
+.checklist-add {
+  grid-template-columns: 1fr auto;
+}
+
+.checklist-add input,
+.checklist-item input {
+  margin-top: 0;
+}
+
+.checklist-item {
+  grid-template-columns: auto 1fr auto;
+}
+
+.checklist-item input[type="checkbox"] {
+  height: 18px;
+  min-height: 18px;
+  width: 18px;
+}
+
+.checklist-item.done input:not([type="checkbox"]) {
+  color: #607168;
+  text-decoration: line-through;
+}
+
+.checklist-list {
+  display: grid;
+  gap: 8px;
 }
 
 .status-history span {
@@ -592,6 +824,20 @@ label {
     grid-template-columns: 1fr;
   }
 
+  .reminder-hero,
+  .reminder-columns,
+  .reminder-row {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-save-field {
+    grid-template-columns: 1fr;
+  }
+
+  .project-stat-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .topbar {
     align-items: start;
     flex-direction: column;
@@ -617,6 +863,10 @@ label {
   }
 
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-stat-columns {
     grid-template-columns: 1fr;
   }
 }

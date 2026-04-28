@@ -1,0 +1,19 @@
+{
+  "name": "AI Workbench",
+  "short_name": "Workbench",
+  "description": "Project work assistant for tasks, reminders, documents, summaries, and email drafts.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f8ff",
+  "theme_color": "#17201b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

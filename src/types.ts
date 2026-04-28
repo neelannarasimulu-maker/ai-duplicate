@@ -21,6 +21,12 @@ export type Requirements = {
   imageRequirements: string;
 };
 
+export type ChecklistItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
 export type WorkTask = {
   id: string;
   projectId: ProjectId;
@@ -36,6 +42,7 @@ export type WorkTask = {
     status: TaskStatus;
     changedAt: string;
   }>;
+  checklist: ChecklistItem[];
   input: string;
   assets: InputAsset[];
   requirements: Requirements;
