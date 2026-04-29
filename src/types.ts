@@ -1,7 +1,7 @@
 export type ProjectId = "avbob" | "naha" | "personal" | "supplysync360" | "bma" | "thenga";
 export type Format = "Markdown" | "TXT" | "DOCX";
 export type Priority = "Low" | "Normal" | "High" | "Urgent";
-export type TaskStatus = "Open" | "In Progress" | "Blocked" | "Closed";
+export type TaskStatus = "Open" | "In Progress" | "Blocked" | "To Do Later" | "Closed";
 
 export type InputAsset = {
   id: string;

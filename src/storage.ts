@@ -168,6 +168,12 @@ async function remoteUpsertPayload(table: "work_tasks" | "saved_outputs", id: st
   if (!supabaseConfigured) return;
 
   try {
+    const deletedAt = await remoteGetMeta<string>(deleteMetaKey(table, id));
+    if (deletedAt) {
+      await remove(table === "work_tasks" ? taskStore : outputStore, id);
+      return;
+    }
+
     await supabaseFetch(`/rest/v1/${table}?on_conflict=id`, {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates" },
@@ -200,10 +206,15 @@ async function remoteDelete(table: "work_tasks" | "saved_outputs", id: string) {
   if (!supabaseConfigured) return;
 
   try {
+    await remoteSetMeta(deleteMetaKey(table, id), new Date().toISOString());
     await supabaseFetch(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
   } catch {
     // Local delete already happened; Supabase sync will resume when available.
   }
+}
+
+function deleteMetaKey(table: "work_tasks" | "saved_outputs", id: string) {
+  return `deleted:${table}:${id}`;
 }
 
 async function remoteGetMeta<T>(key: string) {

@@ -80,6 +80,26 @@ const requirementPresets = {
     constraints: "Make the report useful for decisions. Flag missing evidence clearly.",
     imageRequirements: "",
   },
+  meetingBrief: {
+    outputType: "Meeting or forum briefing pack",
+    format: "Markdown",
+    tone: "Concise, structured, and decision-focused",
+    audience: "Meeting attendees and decision makers",
+    length: "Medium",
+    sections: "Purpose, Agenda, Current status, Key discussion points, Risks, Decisions needed, Actions",
+    constraints: "Use the source notes to prepare a practical meeting pack. Separate discussion points from decisions needed.",
+    imageRequirements: "",
+  },
+  marketResearch: {
+    outputType: "Market research and opportunity note",
+    format: "Markdown",
+    tone: "Analytical, balanced, and commercially useful",
+    audience: "Business development and leadership team",
+    length: "Detailed",
+    sections: "Executive summary, Company profile, Market context, Opportunity fit, Risks and unknowns, Recommended next steps",
+    constraints: "Distinguish source-provided facts from assumptions. Include gaps that need verification.",
+    imageRequirements: "",
+  },
   proposal: {
     outputType: "Proposal-ready document",
     format: "Markdown",
@@ -110,6 +130,16 @@ const requirementPresets = {
     constraints: "Write actionable steps in order. Include a checklist that can be ticked off.",
     imageRequirements: "",
   },
+  clientUpdate: {
+    outputType: "Client or stakeholder update",
+    format: "Markdown",
+    tone: "Clear, calm, and accountable",
+    audience: "Client, sponsor, or internal stakeholder",
+    length: "Short",
+    sections: "Subject line, Status summary, Progress, Risks or blockers, Decisions needed, Next steps",
+    constraints: "Write copy that can be sent or pasted into an email/message with minimal editing.",
+    imageRequirements: "",
+  },
   checklist: {
     outputType: "Checklist or shopping list",
     format: "Markdown",
@@ -123,13 +153,17 @@ const requirementPresets = {
 } satisfies Record<string, Requirements>;
 
 const commonTasks: TaskTemplate[] = [
-  { id: "draft-document", label: "Draft document", description: "Produce a complete document with headings, flow, and next steps.", category: "Documentation", requirements: requirementPresets.document },
-  { id: "summarize", label: "Summarize information", description: "Create a decision-useful summary with facts, risks, gaps, and actions.", category: "Analysis", requirements: requirementPresets.summary },
-  { id: "draft-email", label: "Draft email", description: "Prepare a ready-to-send email with subject line and clear ask.", category: "Communication", requirements: requirementPresets.email },
+  { id: "summarize", label: "Summarize information", description: "Turn notes, documents, or emails into facts, gaps, risks, and action items.", category: "Analysis", requirements: requirementPresets.summary },
+  { id: "draft-document", label: "Draft business document", description: "Produce a complete reusable document with headings, flow, and next steps.", category: "Documentation", requirements: requirementPresets.document },
+  { id: "draft-email", label: "Draft email or message", description: "Prepare ready-to-send communication with a clear ask and next step.", category: "Communication", requirements: requirementPresets.email },
+  { id: "client-update", label: "Client/stakeholder update", description: "Create a status update covering progress, blockers, decisions, and next steps.", category: "Communication", requirements: requirementPresets.clientUpdate },
+  { id: "meeting-brief", label: "Meeting/forum brief", description: "Prepare agenda notes, decision points, risks, and follow-up actions.", category: "Planning", requirements: requirementPresets.meetingBrief },
+  { id: "market-research", label: "Market research note", description: "Structure company research, opportunity fit, risks, and recommended next steps.", category: "Research", requirements: requirementPresets.marketResearch },
   { id: "create-report", label: "Create report", description: "Build a structured report with findings, evidence, and recommendations.", category: "Reporting", requirements: requirementPresets.report },
   { id: "proposal-copy", label: "Create proposal copy", description: "Turn notes into proposal-ready language with scope and deliverables.", category: "Proposal", requirements: requirementPresets.proposal },
+  { id: "process-document", label: "Process/support document", description: "Document operational steps, roles, exceptions, and a tickable process checklist.", category: "Operations", requirements: requirementPresets.process },
   { id: "presentation-text", label: "Presentation text", description: "Create slide-ready bullets with practical speaker notes.", category: "Presentation", requirements: requirementPresets.presentation },
-  { id: "checklist", label: "Checklist or shopping list", description: "Create tickable items for shopping, subtasks, or follow-up work.", category: "Checklist", requirements: requirementPresets.checklist },
+  { id: "checklist", label: "Checklist or shopping list", description: "Create tickable items for shopping, subtasks, admin, or follow-up work.", category: "Checklist", requirements: requirementPresets.checklist },
 ];
 
 const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTemplate[] }> = {
@@ -139,6 +173,8 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
     tasks: [
       { id: "client-communication", label: "Write client communication", description: "Turn notes into a ready-to-send client email or letter.", category: "Communication", requirements: requirementPresets.email },
       { id: "summarize-documents", label: "Summarize documents", description: "Extract key points, risks, gaps, decisions, and action items.", category: "Analysis", requirements: requirementPresets.summary },
+      { id: "advisory-forum", label: "Advisory forum brief", description: "Prepare a concise meeting pack with risks, decisions, and actions.", category: "Planning", requirements: requirementPresets.meetingBrief },
+      { id: "support-process", label: "Support process document", description: "Draft customer support, technical support, escalation, and SLA process content.", category: "Operations", requirements: requirementPresets.process },
       ...commonTasks,
     ],
   },
@@ -148,6 +184,7 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
     tasks: [
       { id: "banking-documents", label: "Draft banking documents", description: "Create clear banking documents with assumptions and compliance-sensitive wording flagged.", category: "Documentation", requirements: requirementPresets.document },
       { id: "process-notes", label: "Create process notes", description: "Turn workflows into simple process documentation and tickable steps.", category: "Operations", requirements: requirementPresets.process },
+      { id: "banking-client-update", label: "Banking client update", description: "Summarize progress, dependencies, commercial items, and decisions needed.", category: "Communication", requirements: requirementPresets.clientUpdate },
       ...commonTasks,
     ],
   },
@@ -164,7 +201,11 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
   bma: {
     name: "BMA Customer Success",
     context: "Customer success updates, client follow-ups, reports, onboarding material, and issue summaries.",
-    tasks: commonTasks,
+    tasks: [
+      { id: "bd-opportunity-note", label: "BD opportunity note", description: "Prepare company research, opportunity fit, risks, and next engagement steps.", category: "Research", requirements: requirementPresets.marketResearch },
+      { id: "customer-success-update", label: "Customer success update", description: "Draft a practical update for client, internal, or delivery stakeholders.", category: "Communication", requirements: requirementPresets.clientUpdate },
+      ...commonTasks,
+    ],
   },
   thenga: {
     name: "Thenga",
@@ -187,7 +228,10 @@ const defaultRequirements: Requirements = {
 const outputStorageKey = "ai-workbench-saved-outputs";
 const taskStorageKey = "ai-workbench-work-tasks";
 const reminderStorageKey = "ai-workbench-triggered-reminders";
-const taskStatuses: TaskStatus[] = ["Open", "In Progress", "Blocked", "Closed"];
+const taskStatuses: TaskStatus[] = ["Open", "In Progress", "Blocked", "To Do Later", "Closed"];
+const mobileStatusOrder: TaskStatus[] = ["In Progress", "Open", "Blocked", "To Do Later", "Closed"];
+const maxUploadSizeBytes = 8 * 1024 * 1024;
+const maxTextAssetCharacters = 120_000;
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -224,12 +268,14 @@ function App() {
   const projectDashboard = buildProjectDashboard(workTasks);
   const selectedProjectStats = projectDashboard.find((item) => item.projectId === projectId);
   const projectWorkTasks = workTasks.filter((item) => item.projectId === projectId);
+  const mobileProjectGroups = buildMobileProjectGroups(workTasks);
+  const mobileCurrentProjectGroup = mobileProjectGroups.find((item) => item.projectId === projectId) ?? mobileProjectGroups[0];
   const sortedWorkTasks = [...workTasks].sort((a, b) => {
-    if (a.status !== b.status) return a.status === "Open" ? -1 : 1;
+    if (a.status !== b.status) return statusRank(a.status) - statusRank(b.status);
     return priorityRank(b.priority) - priorityRank(a.priority) || dateValue(a.dueDate) - dateValue(b.dueDate);
   });
   const sortedProjectTasks = [...projectWorkTasks].sort((a, b) => {
-    if (a.status !== b.status) return a.status === "Open" ? -1 : 1;
+    if (a.status !== b.status) return statusRank(a.status) - statusRank(b.status);
     return priorityRank(b.priority) - priorityRank(a.priority) || dateValue(a.dueDate) - dateValue(b.dueDate);
   });
   const summary = buildTaskSummary(workTasks);
@@ -548,6 +594,15 @@ function App() {
     const files = Array.from(event.target.files ?? []);
     const nextAssets = await Promise.all(
       files.map(async (file) => {
+        if (file.size > maxUploadSizeBytes) {
+          return {
+            id: createId(),
+            name: file.name,
+            type: "file" as const,
+            content: `Skipped for safety: ${file.name} is larger than ${Math.round(maxUploadSizeBytes / 1024 / 1024)} MB. Paste the relevant text into the input box instead.`,
+          };
+        }
+
         if (file.type.startsWith("image/")) {
           return {
             id: createId(),
@@ -567,12 +622,15 @@ function App() {
           : canReadText
             ? await file.text()
             : "This file is attached but cannot be read in the browser. For PDF or scanned files, paste the important text into the input box.";
+        const safeContent = content.length > maxTextAssetCharacters
+          ? `${content.slice(0, maxTextAssetCharacters)}\n\n[Content truncated at ${maxTextAssetCharacters.toLocaleString()} characters for browser performance.]`
+          : content;
 
         return {
           id: createId(),
           name: file.name,
           type: canReadText || isDocx || isPptx ? ("text" as const) : ("file" as const),
-          content,
+          content: safeContent,
         };
       }),
     );
@@ -796,7 +854,7 @@ function App() {
           )}
 
           {mobileSection === "tasks" && (
-          <section className="panel">
+          <section className="mobile-task-view">
             <div className="mobile-section-header">
               <h2>
                 <ListTodo size={18} />
@@ -807,27 +865,37 @@ function App() {
                 New
               </button>
             </div>
-            <div className="mobile-task-list">
-              {sortedWorkTasks.map((item) => (
-                <article key={item.id} className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <small>{projects[item.projectId].name} - {item.status}</small>
-                    <small>{taskDateLabel(item)}</small>
-                  </div>
-                  <div className="mobile-task-actions">
-                    <button className="ghost-button" onClick={() => openMobileTask(item, "details")} type="button">
-                      <ListTodo size={15} />
-                      Task details
-                    </button>
-                    <button className="primary-button" onClick={() => openMobileTask(item, "ai")} type="button">
-                      <Sparkles size={15} />
-                      AI prompt
-                    </button>
-                  </div>
-                </article>
+            <div className="mobile-project-strip" aria-label="Mobile project selector">
+              {mobileProjectGroups.map((item) => (
+                <button
+                  className={projectId === item.projectId ? "active" : ""}
+                  key={item.projectId}
+                  onClick={() => updateProject(item.projectId)}
+                  type="button"
+                >
+                  <span>{projects[item.projectId].name}</span>
+                  <strong>{item.total}</strong>
+                </button>
               ))}
             </div>
+            {mobileCurrentProjectGroup && (
+              <div className="mobile-status-groups">
+                <div className="mobile-project-title">
+                  <strong>{projects[mobileCurrentProjectGroup.projectId].name}</strong>
+                  <span>{mobileCurrentProjectGroup.total} tasks</span>
+                </div>
+                {mobileStatusOrder.map((status) => (
+                  <MobileStatusSection
+                    activeWorkTaskId={activeWorkTaskId}
+                    items={mobileCurrentProjectGroup.byStatus[status]}
+                    key={status}
+                    now={now}
+                    onOpen={openMobileTask}
+                    status={status}
+                  />
+                ))}
+              </div>
+            )}
           </section>
           )}
 
@@ -1011,6 +1079,10 @@ function App() {
           <strong>{summary.blocked}</strong>
           <span>Blocked</span>
         </div>
+        <div className="summary-card summary-later">
+          <strong>{summary.toDoLater}</strong>
+          <span>To do later</span>
+        </div>
         <div className="summary-card summary-urgent">
           <strong>{summary.urgent}</strong>
           <span>Urgent</span>
@@ -1048,6 +1120,7 @@ function App() {
                 <small>Open {item.open}</small>
                 <small>Progress {item.inProgress}</small>
                 <small>Blocked {item.blocked}</small>
+                <small>Later {item.toDoLater}</small>
                 <small>Closed {item.closed}</small>
               </div>
             </button>
@@ -1132,6 +1205,7 @@ function App() {
               <div className="project-stat-row status-open"><span>Open</span><strong>{selectedProjectStats?.open ?? 0}</strong></div>
               <div className="project-stat-row status-in-progress"><span>In progress</span><strong>{selectedProjectStats?.inProgress ?? 0}</strong></div>
               <div className="project-stat-row status-blocked"><span>Blocked</span><strong>{selectedProjectStats?.blocked ?? 0}</strong></div>
+              <div className="project-stat-row status-to-do-later"><span>To do later</span><strong>{selectedProjectStats?.toDoLater ?? 0}</strong></div>
               <div className="project-stat-row status-closed"><span>Closed</span><strong>{selectedProjectStats?.closed ?? 0}</strong></div>
             </div>
           </section>
@@ -1178,10 +1252,22 @@ function App() {
                 <ListTodo size={18} />
                 {project.name} tasks
               </h2>
-              <button className="primary-button" onClick={createWorkTask} type="button">
-                <ListTodo size={16} />
-                New task
-              </button>
+              <div className="new-task-control">
+                <label>
+                  Template
+                  <select value={taskId} onChange={(event) => selectTemplate(event.target.value)}>
+                    {project.tasks.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="primary-button" onClick={createWorkTask} type="button">
+                  <ListTodo size={16} />
+                  New task
+                </button>
+              </div>
             </div>
             {sortedProjectTasks.length === 0 ? (
               <p className="empty">Create your first task for {project.name}. It can be a document, summary, email, or a checklist-style task.</p>
@@ -1626,6 +1712,54 @@ function ReminderColumn({
   );
 }
 
+function MobileStatusSection({
+  activeWorkTaskId,
+  items,
+  now,
+  onOpen,
+  status,
+}: {
+  activeWorkTaskId: string;
+  items: WorkTask[];
+  now: number;
+  onOpen: (task: WorkTask, target: "details" | "ai") => void;
+  status: TaskStatus;
+}) {
+  const defaultOpen = status === "In Progress" || status === "Open" || status === "Blocked";
+
+  return (
+    <details className={`mobile-status-section status-${statusSlug(status)}`} open={defaultOpen}>
+      <summary>
+        <span>{status}</span>
+        <strong>{items.length}</strong>
+      </summary>
+      <div className="mobile-task-list">
+        {items.map((item) => (
+          <article key={item.id} className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
+            <div>
+              <strong>{item.title}</strong>
+              <small>{item.category} - {item.priority}</small>
+              <small>{taskDateLabel(item)}</small>
+              {isValidDateTime(item.reminderAt) && <small>{reminderLabel(item, now)}</small>}
+            </div>
+            <div className="mobile-task-actions">
+              <button className="ghost-button" onClick={() => onOpen(item, "details")} type="button">
+                <ListTodo size={15} />
+                Task details
+              </button>
+              <button className="primary-button" onClick={() => onOpen(item, "ai")} type="button">
+                <Sparkles size={15} />
+                AI prompt
+              </button>
+            </div>
+          </article>
+        ))}
+        {items.length === 0 && <p className="empty compact-empty">No {status.toLowerCase()} tasks.</p>}
+      </div>
+    </details>
+  );
+}
+
 function normalizeWorkTask(task: WorkTask): WorkTask {
   const fallbackProjectId = task.projectId && projects[task.projectId] ? task.projectId : "avbob";
   const fallbackTemplateId = projects[fallbackProjectId].tasks.some((template) => template.id === task.templateId)
@@ -1666,6 +1800,10 @@ function priorityRank(priority: Priority) {
   return { Low: 1, Normal: 2, High: 3, Urgent: 4 }[priority] ?? 0;
 }
 
+function statusRank(status: TaskStatus) {
+  return { "In Progress": 1, Open: 2, Blocked: 3, "To Do Later": 4, Closed: 5 }[status] ?? 99;
+}
+
 function dateValue(date: string) {
   if (!date) return Number.MAX_SAFE_INTEGER;
   const value = new Date(date).getTime();
@@ -1679,6 +1817,7 @@ function buildTaskSummary(tasks: WorkTask[]) {
     open: tasks.filter((item) => item.status === "Open").length,
     inProgress: tasks.filter((item) => item.status === "In Progress").length,
     blocked: tasks.filter((item) => item.status === "Blocked").length,
+    toDoLater: tasks.filter((item) => item.status === "To Do Later").length,
     closed: tasks.filter((item) => item.status === "Closed").length,
     urgent: tasks.filter((item) => item.status !== "Closed" && item.priority === "Urgent").length,
     reminders: tasks.filter((item) => item.status !== "Closed" && isValidDateTime(item.reminderAt) && new Date(item.reminderAt).getTime() <= now).length,
@@ -1712,8 +1851,25 @@ function buildProjectDashboard(tasks: WorkTask[]) {
   });
 }
 
-function statusKey(status: TaskStatus): "open" | "inProgress" | "blocked" | "closed" {
+function buildMobileProjectGroups(tasks: WorkTask[]) {
+  return (Object.keys(projects) as ProjectId[]).map((projectId) => {
+    const projectTasks = tasks
+      .filter((task) => task.projectId === projectId)
+      .sort((a, b) => statusRank(a.status) - statusRank(b.status) || priorityRank(b.priority) - priorityRank(a.priority) || dateValue(a.dueDate) - dateValue(b.dueDate));
+
+    return {
+      projectId,
+      total: projectTasks.length,
+      byStatus: Object.fromEntries(
+        mobileStatusOrder.map((status) => [status, projectTasks.filter((task) => task.status === status)]),
+      ) as Record<TaskStatus, WorkTask[]>,
+    };
+  });
+}
+
+function statusKey(status: TaskStatus): "open" | "inProgress" | "blocked" | "toDoLater" | "closed" {
   if (status === "In Progress") return "inProgress";
+  if (status === "To Do Later") return "toDoLater";
   return status.toLowerCase() as "open" | "blocked" | "closed";
 }
 
