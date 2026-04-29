@@ -214,6 +214,7 @@ function App() {
   const [mobileSection, setMobileSection] = useState<"capture" | "tasks" | "reminders">("tasks");
   const [reminderDrafts, setReminderDrafts] = useState<Record<string, string>>({});
   const [now, setNow] = useState(() => Date.now());
+  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
 
   const project = projects[projectId];
@@ -243,30 +244,50 @@ function App() {
     return missing;
   }, [assets.length, input, requirements.audience, requirements.outputType, requirements.sections]);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadDatabase() {
+  async function refreshData() {
+    setSyncing(true);
+    try {
       try {
         await migrateLegacyStorage(taskStorageKey, outputStorageKey, reminderStorageKey);
-        const [dbTasks, dbOutputs] = await Promise.all([
-          getTasks(),
-          getOutputs(),
-        ]);
-
-        if (!isMounted) return;
-        setWorkTasks(dbTasks.map(normalizeWorkTask));
-        setSavedOutputs(dbOutputs);
-        setMessage(`Database loaded. Tasks and history are saved in ${getStorageBackendLabel()}.`);
-      } catch (error) {
-        setMessage(error instanceof Error ? `Database load failed: ${error.message}` : "Database load failed.");
+      } catch {
+        // Legacy localStorage migration should not block a fresh Supabase pull.
       }
+      const taskResult = await getTasks();
+      let outputResult: SavedOutput[] = [];
+      let outputWarning = "";
+
+      try {
+        outputResult = await getOutputs();
+      } catch (error) {
+        outputWarning = error instanceof Error ? ` Saved outputs failed: ${error.message}` : " Saved outputs failed.";
+      }
+
+      setWorkTasks(taskResult.map(normalizeWorkTask));
+      setSavedOutputs(outputResult);
+      setNow(Date.now());
+      setMessage(`Synced ${taskResult.length} tasks and ${outputResult.length} saved outputs from ${getStorageBackendLabel()}.${outputWarning}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? `Database sync failed: ${error.message}` : "Database sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshData();
+  }, []);
+
+  useEffect(() => {
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") void refreshData();
     }
 
-    void loadDatabase();
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
 
     return () => {
-      isMounted = false;
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
     };
   }, []);
 
@@ -672,11 +693,21 @@ function App() {
             <Smartphone size={16} />
             Mobile
           </button>
+          <button className="ghost-button" disabled={syncing} onClick={() => void refreshData()} type="button" title="Pull latest data from Supabase">
+            <History size={16} />
+            {syncing ? "Syncing" : "Sync"}
+          </button>
           <button className="ghost-button" onClick={clearWorkspace} type="button" title="Clear current AI workspace">
             <Trash2 size={16} />
           </button>
         </div>
       </section>
+
+      {message && (
+        <div className="sync-banner" role="status">
+          {message}
+        </div>
+      )}
 
       {viewMode === "mobile" && (
         <section className="mobile-shell">

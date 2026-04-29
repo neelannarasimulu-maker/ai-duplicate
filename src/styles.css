@@ -62,6 +62,15 @@ button:disabled {
   gap: 10px;
 }
 
+.sync-banner {
+  background: #eef3ff;
+  border: 1px solid #c9d5ff;
+  color: #1b2b78;
+  font-weight: 800;
+  margin: -4px 0 16px;
+  padding: 10px 12px;
+}
+
 .nav-button {
   background: #ffffff;
   border-color: #d8ddff;

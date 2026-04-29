@@ -129,29 +129,38 @@ async function remoteGetPayloads<T extends WorkTask | SavedOutput>(
   getTimestamp: (payload: T) => string,
   fallback: () => Promise<T[]>,
 ) {
-  const localPayloads = await fallback();
+  let localPayloads: T[] = [];
+  try {
+    localPayloads = await fallback();
+  } catch (error) {
+    console.warn(`Local cache read failed for ${storeName}; pulling from Supabase instead.`, error);
+  }
+
   if (!supabaseConfigured) return localPayloads;
 
   try {
-    const response = await supabaseFetch(`/rest/v1/${table}?select=payload&order=${order}&_=${Date.now()}`, {
+    const response = await supabaseFetch(`/rest/v1/${table}?select=payload&order=${order}`, {
       cache: "no-store",
     });
     const rows = (await response.json()) as Array<{ payload: T }>;
-    const remotePayloads = rows.map((row) => row.payload);
-    const merged = mergePayloads(localPayloads, remotePayloads, getTimestamp);
+    const remotePayloads = rows.map((row) => row.payload).filter((payload): payload is T => Boolean(payload?.id));
+    const merged = mergeRemoteFirst(localPayloads, remotePayloads);
     const remoteById = new Map(remotePayloads.map((payload) => [payload.id, payload]));
-    const localWins = merged.filter((payload) => {
-      const remote = remoteById.get(payload.id);
-      return !remote || timestampValue(getTimestamp(payload)) > timestampValue(getTimestamp(remote));
+    const missingRemote = localPayloads.filter((payload) => !remoteById.has(payload.id));
+
+    void Promise.all([
+      ...merged.map((payload) => put(storeName, payload)),
+      ...missingRemote.map((payload) => remoteUpsertPayload(table, payload.id, payload, getTimestamp(payload))),
+    ]).catch(() => {
+      // Remote data is still returned to the app even if local cache refresh fails.
     });
 
-    await Promise.all([
-      ...merged.map((payload) => put(storeName, payload)),
-      ...localWins.map((payload) => remoteUpsertPayload(table, payload.id, payload, getTimestamp(payload))),
-    ]);
-
     return merged.sort((a, b) => timestampValue(getTimestamp(b)) - timestampValue(getTimestamp(a)));
-  } catch {
+  } catch (error) {
+    console.error(`Supabase sync failed for ${table}`, error);
+    if (localPayloads.length === 0) {
+      throw error instanceof Error ? error : new Error(`Supabase sync failed for ${table}`);
+    }
     return localPayloads;
   }
 }
@@ -175,18 +184,15 @@ async function remoteUpsertPayload(table: "work_tasks" | "saved_outputs", id: st
   }
 }
 
-function mergePayloads<T extends { id: string }>(localPayloads: T[], remotePayloads: T[], getTimestamp: (payload: T) => string) {
+function mergeRemoteFirst<T extends { id: string }>(localPayloads: T[], remotePayloads: T[]) {
   const merged = new Map<string, T>();
 
-  for (const payload of remotePayloads) {
+  for (const payload of localPayloads) {
     merged.set(payload.id, payload);
   }
 
-  for (const payload of localPayloads) {
-    const existing = merged.get(payload.id);
-    if (!existing || timestampValue(getTimestamp(payload)) >= timestampValue(getTimestamp(existing))) {
-      merged.set(payload.id, payload);
-    }
+  for (const payload of remotePayloads) {
+    merged.set(payload.id, payload);
   }
 
   return [...merged.values()];
@@ -219,7 +225,7 @@ async function remoteGetMeta<T>(key: string) {
   if (!supabaseConfigured) return undefined;
 
   try {
-    const response = await supabaseFetch(`/rest/v1/app_meta?key=eq.${encodeURIComponent(key)}&select=value&limit=1&_=${Date.now()}`, {
+    const response = await supabaseFetch(`/rest/v1/app_meta?key=eq.${encodeURIComponent(key)}&select=value&limit=1`, {
       cache: "no-store",
     });
     const rows = (await response.json()) as Array<{ value: T }>;
@@ -251,13 +257,14 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
       apikey: supabaseAnonKey,
       Authorization: `Bearer ${supabaseAnonKey}`,
       "Content-Type": "application/json",
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
       ...(init.headers ?? {}),
     },
   });
 
-  if (!response.ok) throw new Error(`Supabase HTTP ${response.status}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Supabase HTTP ${response.status}${body ? `: ${body}` : ""}`);
+  }
   return response;
 }
 

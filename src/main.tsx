@@ -9,7 +9,22 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   </React.StrictMode>,
 );
 
-if ("serviceWorker" in navigator) {
+if ("serviceWorker" in navigator && import.meta.env.DEV) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.getRegistrations().then((registrations) => {
+      if (registrations.length === 0) return;
+
+      registrations.forEach((registration) => {
+        void registration.unregister();
+      });
+
+      if (navigator.serviceWorker.controller && sessionStorage.getItem("devServiceWorkerCleared") !== "true") {
+        sessionStorage.setItem("devServiceWorkerCleared", "true");
+        window.location.reload();
+      }
+    });
+  });
+} else if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register("/service-worker.js");
   });
