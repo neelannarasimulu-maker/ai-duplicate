@@ -62,7 +62,7 @@ async function remove(storeName: string, id: string) {
 }
 
 export function getTasks() {
-  return remoteGetPayloads<WorkTask>("work_tasks", "updated_at.desc", () => getAll<WorkTask>(taskStore));
+  return remoteGetPayloads<WorkTask>("work_tasks", taskStore, "updated_at.desc", taskTimestamp, () => getAll<WorkTask>(taskStore));
 }
 
 export async function saveTask(task: WorkTask) {
@@ -76,7 +76,7 @@ export async function deleteTask(id: string) {
 }
 
 export function getOutputs() {
-  return remoteGetPayloads<SavedOutput>("saved_outputs", "created_at.desc", () => getAll<SavedOutput>(outputStore));
+  return remoteGetPayloads<SavedOutput>("saved_outputs", outputStore, "created_at.desc", outputTimestamp, () => getAll<SavedOutput>(outputStore));
 }
 
 export async function saveOutput(output: SavedOutput) {
@@ -122,19 +122,37 @@ export async function migrateLegacyStorage(taskKey: string, outputKey: string, r
   ]);
 }
 
-async function remoteGetPayloads<T>(table: "work_tasks" | "saved_outputs", order: string, fallback: () => Promise<T[]>) {
-  if (!supabaseConfigured) return fallback();
+async function remoteGetPayloads<T extends WorkTask | SavedOutput>(
+  table: "work_tasks" | "saved_outputs",
+  storeName: string,
+  order: string,
+  getTimestamp: (payload: T) => string,
+  fallback: () => Promise<T[]>,
+) {
+  const localPayloads = await fallback();
+  if (!supabaseConfigured) return localPayloads;
 
   try {
     const response = await supabaseFetch(`/rest/v1/${table}?select=payload&order=${order}&_=${Date.now()}`, {
       cache: "no-store",
     });
     const rows = (await response.json()) as Array<{ payload: T }>;
-    const payloads = rows.map((row) => row.payload);
-    await Promise.all(payloads.map((payload) => put(table === "work_tasks" ? taskStore : outputStore, payload)));
-    return payloads;
+    const remotePayloads = rows.map((row) => row.payload);
+    const merged = mergePayloads(localPayloads, remotePayloads, getTimestamp);
+    const remoteById = new Map(remotePayloads.map((payload) => [payload.id, payload]));
+    const localWins = merged.filter((payload) => {
+      const remote = remoteById.get(payload.id);
+      return !remote || timestampValue(getTimestamp(payload)) > timestampValue(getTimestamp(remote));
+    });
+
+    await Promise.all([
+      ...merged.map((payload) => put(storeName, payload)),
+      ...localWins.map((payload) => remoteUpsertPayload(table, payload.id, payload, getTimestamp(payload))),
+    ]);
+
+    return merged.sort((a, b) => timestampValue(getTimestamp(b)) - timestampValue(getTimestamp(a)));
   } catch {
-    return fallback();
+    return localPayloads;
   }
 }
 
@@ -155,6 +173,36 @@ async function remoteUpsertPayload(table: "work_tasks" | "saved_outputs", id: st
   } catch {
     // IndexedDB already has a local copy; Supabase sync will resume when available.
   }
+}
+
+function mergePayloads<T extends { id: string }>(localPayloads: T[], remotePayloads: T[], getTimestamp: (payload: T) => string) {
+  const merged = new Map<string, T>();
+
+  for (const payload of remotePayloads) {
+    merged.set(payload.id, payload);
+  }
+
+  for (const payload of localPayloads) {
+    const existing = merged.get(payload.id);
+    if (!existing || timestampValue(getTimestamp(payload)) >= timestampValue(getTimestamp(existing))) {
+      merged.set(payload.id, payload);
+    }
+  }
+
+  return [...merged.values()];
+}
+
+function taskTimestamp(task: WorkTask) {
+  return task.updatedAt || task.createdAt || "";
+}
+
+function outputTimestamp(output: SavedOutput) {
+  return output.createdAt || "";
+}
+
+function timestampValue(timestamp: string) {
+  const value = new Date(timestamp).getTime();
+  return Number.isFinite(value) ? value : 0;
 }
 
 async function remoteDelete(table: "work_tasks" | "saved_outputs", id: string) {
