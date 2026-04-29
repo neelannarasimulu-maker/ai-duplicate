@@ -144,18 +144,17 @@ async function remoteGetPayloads<T extends WorkTask | SavedOutput>(
     });
     const rows = (await response.json()) as Array<{ payload: T }>;
     const remotePayloads = rows.map((row) => row.payload).filter((payload): payload is T => Boolean(payload?.id));
-    const merged = mergeRemoteFirst(localPayloads, remotePayloads);
     const remoteById = new Map(remotePayloads.map((payload) => [payload.id, payload]));
-    const missingRemote = localPayloads.filter((payload) => !remoteById.has(payload.id));
+    const staleLocalPayloads = localPayloads.filter((payload) => !remoteById.has(payload.id));
 
     void Promise.all([
-      ...merged.map((payload) => put(storeName, payload)),
-      ...missingRemote.map((payload) => remoteUpsertPayload(table, payload.id, payload, getTimestamp(payload))),
+      ...remotePayloads.map((payload) => put(storeName, payload)),
+      ...staleLocalPayloads.map((payload) => remove(storeName, payload.id)),
     ]).catch(() => {
       // Remote data is still returned to the app even if local cache refresh fails.
     });
 
-    return merged.sort((a, b) => timestampValue(getTimestamp(b)) - timestampValue(getTimestamp(a)));
+    return remotePayloads.sort((a, b) => timestampValue(getTimestamp(b)) - timestampValue(getTimestamp(a)));
   } catch (error) {
     console.error(`Supabase sync failed for ${table}`, error);
     if (localPayloads.length === 0) {
@@ -182,20 +181,6 @@ async function remoteUpsertPayload(table: "work_tasks" | "saved_outputs", id: st
   } catch {
     // IndexedDB already has a local copy; Supabase sync will resume when available.
   }
-}
-
-function mergeRemoteFirst<T extends { id: string }>(localPayloads: T[], remotePayloads: T[]) {
-  const merged = new Map<string, T>();
-
-  for (const payload of localPayloads) {
-    merged.set(payload.id, payload);
-  }
-
-  for (const payload of remotePayloads) {
-    merged.set(payload.id, payload);
-  }
-
-  return [...merged.values()];
 }
 
 function taskTimestamp(task: WorkTask) {
