@@ -2,6 +2,7 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   BarChart3,
+  BellRing,
   CalendarClock,
   Check,
   CheckSquare,
@@ -10,26 +11,34 @@ import {
   FileImage,
   FileText,
   History,
+  LayoutDashboard,
   ListTodo,
+  Pin,
   Plus,
   Save,
   Smartphone,
   Sparkles,
+  StickyNote,
   Trash2,
   Upload,
+  WandSparkles,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import {
   deleteTask,
   getStorageBackendLabel,
+  getMeta,
+  getNotes,
   getOutputs,
   getTasks,
   migrateLegacyStorage,
   saveOutput,
+  saveNotes,
   saveTask,
+  setMeta,
 } from "./storage";
-import type { ChecklistItem, Format, InputAsset, Priority, ProjectId, Requirements, SavedOutput, TaskStatus, WorkTask } from "./types";
+import type { AppNote, AppNoteEntry, ChecklistItem, Format, InputAsset, Priority, ProjectId, Requirements, SavedOutput, TaskStatus, WorkTask } from "./types";
 
 type TaskTemplate = {
   id: string;
@@ -228,6 +237,7 @@ const defaultRequirements: Requirements = {
 const outputStorageKey = "ai-workbench-saved-outputs";
 const taskStorageKey = "ai-workbench-work-tasks";
 const reminderStorageKey = "ai-workbench-triggered-reminders";
+const triggeredReminderMetaKey = "triggeredReminderIds";
 const taskStatuses: TaskStatus[] = ["Open", "In Progress", "Blocked", "To Do Later", "Closed"];
 const mobileStatusOrder: TaskStatus[] = ["In Progress", "Open", "Blocked", "To Do Later", "Closed"];
 const maxUploadSizeBytes = 8 * 1024 * 1024;
@@ -247,16 +257,22 @@ function App() {
   const [result, setResult] = useState("");
   const [savedOutputs, setSavedOutputs] = useState<SavedOutput[]>([]);
   const [workTasks, setWorkTasks] = useState<WorkTask[]>([]);
+  const [notes, setNotes] = useState<AppNote[]>([]);
   const [activeWorkTaskId, setActiveWorkTaskId] = useState("");
-  const [viewMode, setViewMode] = useState<"work" | "projects" | "reminders" | "mobile">("work");
+  const [viewMode, setViewMode] = useState<"home" | "work" | "projects" | "reminders" | "notes" | "mobile">("home");
   const [quickTaskTitle, setQuickTaskTitle] = useState("");
   const [quickTaskDetails, setQuickTaskDetails] = useState("");
   const [quickChecklistDraft, setQuickChecklistDraft] = useState("");
   const [quickChecklistItems, setQuickChecklistItems] = useState<ChecklistItem[]>([]);
   const [quickChecklistItem, setQuickChecklistItem] = useState("");
+  const [noteDraft, setNoteDraft] = useState({ title: "", content: "" });
   const [mobileFullOpen, setMobileFullOpen] = useState(false);
   const [mobileSection, setMobileSection] = useState<"capture" | "tasks" | "reminders">("tasks");
   const [reminderDrafts, setReminderDrafts] = useState<Record<string, string>>({});
+  const [triggeredReminderIds, setTriggeredReminderIds] = useState<string[]>([]);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() =>
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+  );
   const [now, setNow] = useState(() => Date.now());
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
@@ -280,6 +296,9 @@ function App() {
   });
   const summary = buildTaskSummary(workTasks);
   const reminderPlanner = buildReminderPlanner(workTasks, now);
+  const noteEntryCount = notes.reduce((total, note) => total + note.entries.length, 0);
+  const activeFocusTasks = sortedWorkTasks.filter((item) => item.status !== "Closed").slice(0, 6);
+  const recentNotes = [...notes].sort((a, b) => dateValue(b.updatedAt) - dateValue(a.updatedAt)).slice(0, 4);
 
   const missingDetails = useMemo(() => {
     const missing: string[] = [];
@@ -307,11 +326,15 @@ function App() {
       } catch (error) {
         outputWarning = error instanceof Error ? ` Saved outputs failed: ${error.message}` : " Saved outputs failed.";
       }
+      const noteResult = await getNotes();
+      const triggeredResult = await getMeta<string[]>(triggeredReminderMetaKey, []);
 
       setWorkTasks(taskResult.map(normalizeWorkTask));
+      setNotes(noteResult.map(normalizeNote));
       setSavedOutputs(outputResult);
+      setTriggeredReminderIds(triggeredResult);
       setNow(Date.now());
-      setMessage(`Synced ${taskResult.length} tasks and ${outputResult.length} saved outputs from ${getStorageBackendLabel()}.${outputWarning}`);
+      setMessage(`Synced ${taskResult.length} tasks, ${noteResult.length} notes, and ${outputResult.length} saved outputs from ${getStorageBackendLabel()}.${outputWarning}`);
     } catch (error) {
       setMessage(error instanceof Error ? `Database sync failed: ${error.message}` : "Database sync failed.");
     } finally {
@@ -340,10 +363,27 @@ function App() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 60000);
+    }, 30000);
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const dueTasks = workTasks.filter((item) => {
+      if (!item.reminderAt || item.status === "Closed") return false;
+      const dueAt = new Date(item.reminderAt).getTime();
+      return Number.isFinite(dueAt) && dueAt <= now && !triggeredReminderIds.includes(reminderTriggerId(item));
+    });
+
+    if (dueTasks.length === 0) return;
+
+    const nextTriggeredIds = [...triggeredReminderIds, ...dueTasks.map(reminderTriggerId)];
+    setTriggeredReminderIds(nextTriggeredIds);
+    void setMeta(triggeredReminderMetaKey, nextTriggeredIds);
+    dueTasks.forEach((item) => {
+      void notifyReminder(item);
+    });
+  }, [now, triggeredReminderIds, workTasks]);
 
   function updateProject(nextProjectId: ProjectId) {
     setProjectId(nextProjectId);
@@ -502,6 +542,7 @@ function App() {
     );
     if (key === "projectId") setProjectId(value as ProjectId);
     if (key === "templateId") setTaskId(value as string);
+    if (key === "reminderAt") forgetTriggeredReminder(id);
   }
 
   function updateActiveWorkTask<K extends keyof WorkTask>(key: K, value: WorkTask[K]) {
@@ -549,6 +590,7 @@ function App() {
     };
     setWorkTasks((current) => current.map((item) => (item.id === activeWorkTask.id ? updated : item)));
     void saveTask(updated);
+    forgetTriggeredReminder(activeWorkTask.id);
     setNow(Date.now());
     setMessage("Task saved, including reminder date.");
   }
@@ -556,6 +598,7 @@ function App() {
   function clearReminder(id: string) {
     setReminderDrafts((current) => ({ ...current, [id]: "" }));
     updateWorkTask(id, "reminderAt", "");
+    forgetTriggeredReminder(id);
     setMessage("Reminder cleared.");
   }
 
@@ -574,6 +617,7 @@ function App() {
     };
     setWorkTasks((current) => current.map((item) => (item.id === id ? updated : item)));
     void saveTask(updated);
+    forgetTriggeredReminder(id);
     setNow(Date.now());
     setMessage(value ? "Reminder saved." : "Reminder cleared.");
   }
@@ -582,12 +626,115 @@ function App() {
     const value = localDatetimeValue(nextPlanningHour(now));
     setReminderDrafts((current) => ({ ...current, [id]: value }));
     updateWorkTask(id, "reminderAt", value);
+    forgetTriggeredReminder(id);
     setNow(Date.now());
     setMessage("Reminder scheduled for today.");
   }
 
   function reminderValue(task: WorkTask) {
     return reminderDrafts[task.id] ?? task.reminderAt;
+  }
+
+  async function enableNotifications() {
+    if (typeof Notification === "undefined") {
+      setNotificationPermission("unsupported");
+      setMessage("This browser does not support reminder notifications.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    setMessage(permission === "granted" ? "Reminder notifications enabled for this device." : "Reminder notifications were not enabled.");
+  }
+
+  function forgetTriggeredReminder(taskId: string) {
+    setTriggeredReminderIds((current) => {
+      const next = current.filter((item) => !item.startsWith(`${taskId}:`));
+      void setMeta(triggeredReminderMetaKey, next);
+      return next;
+    });
+  }
+
+  function persistNotes(nextNotes: AppNote[]) {
+    setNotes(nextNotes);
+    void saveNotes(nextNotes);
+  }
+
+  function createNote() {
+    if (!noteDraft.title.trim() && !noteDraft.content.trim()) {
+      setMessage("Add a note title or information before saving.");
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    const newNote: AppNote = {
+      id: createId(),
+      projectId,
+      title: noteDraft.title.trim() || "Untitled note",
+      entries: noteDraft.content.trim()
+        ? [{ id: createId(), content: noteDraft.content.trim(), createdAt: timestamp, updatedAt: timestamp }]
+        : [],
+      pinned: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    persistNotes([newNote, ...notes]);
+    setNoteDraft({ title: "", content: "" });
+    setMessage("Note saved.");
+  }
+
+  function updateNote(id: string, patch: Partial<AppNote>) {
+    persistNotes(notes.map((item) => (item.id === id ? { ...item, ...patch, updatedAt: new Date().toISOString() } : item)));
+  }
+
+  function addNoteEntry(id: string) {
+    const timestamp = new Date().toISOString();
+    persistNotes(
+      notes.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              entries: [{ id: createId(), content: "", createdAt: timestamp, updatedAt: timestamp }, ...item.entries],
+              updatedAt: timestamp,
+            }
+          : item,
+      ),
+    );
+  }
+
+  function updateNoteEntry(noteId: string, entryId: string, content: string) {
+    const timestamp = new Date().toISOString();
+    persistNotes(
+      notes.map((item) =>
+        item.id === noteId
+          ? {
+              ...item,
+              entries: item.entries.map((entry) => (entry.id === entryId ? { ...entry, content, updatedAt: timestamp } : entry)),
+              updatedAt: timestamp,
+            }
+          : item,
+      ),
+    );
+  }
+
+  function removeNoteEntry(noteId: string, entryId: string) {
+    const timestamp = new Date().toISOString();
+    persistNotes(
+      notes.map((item) =>
+        item.id === noteId
+          ? {
+              ...item,
+              entries: item.entries.filter((entry) => entry.id !== entryId),
+              updatedAt: timestamp,
+            }
+          : item,
+      ),
+    );
+  }
+
+  function removeNote(id: string) {
+    persistNotes(notes.filter((item) => item.id !== id));
+    setMessage("Note deleted.");
   }
 
   async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -729,34 +876,66 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="topbar">
-        <div>
-          <p className="eyebrow">Functional AI Workbench</p>
-          <h1>Project work assistant</h1>
+      <aside className="app-rail" aria-label="Primary navigation">
+        <div className="brand-mark">
+          <span>AI</span>
+          <div>
+            <strong>WorkOS</strong>
+            <small>Tasks + notes</small>
+          </div>
         </div>
-        <div className="topbar-actions">
+        <nav className="rail-nav">
+          <button className={viewMode === "home" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("home")} type="button">
+            <LayoutDashboard size={17} />
+            Home
+          </button>
           <button className={viewMode === "work" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("work")} type="button">
-            <ListTodo size={16} />
+            <ListTodo size={17} />
             Work
           </button>
-          <button className={viewMode === "projects" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("projects")} type="button">
-            <BarChart3 size={16} />
-            Projects
+          <button className={viewMode === "notes" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("notes")} type="button">
+            <StickyNote size={17} />
+            Notes
           </button>
           <button className={viewMode === "reminders" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("reminders")} type="button">
-            <CalendarClock size={16} />
+            <CalendarClock size={17} />
             Reminders
           </button>
+          <button className={viewMode === "projects" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("projects")} type="button">
+            <BarChart3 size={17} />
+            Projects
+          </button>
           <button className={viewMode === "mobile" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("mobile")} type="button">
-            <Smartphone size={16} />
+            <Smartphone size={17} />
             Mobile
           </button>
+        </nav>
+        <div className="rail-actions">
           <button className="ghost-button" disabled={syncing} onClick={() => void refreshData()} type="button" title="Pull latest data from Supabase">
             <History size={16} />
             {syncing ? "Syncing" : "Sync"}
           </button>
           <button className="ghost-button" onClick={clearWorkspace} type="button" title="Clear current AI workspace">
             <Trash2 size={16} />
+            Clear
+          </button>
+        </div>
+      </aside>
+
+      <section className="app-main">
+      <section className="topbar">
+        <div>
+          <p className="eyebrow">AI-powered work command center</p>
+          <h1>{viewMode === "home" ? "Today, tasks, notes, and AI drafts" : "Project work assistant"}</h1>
+        </div>
+        <div className="topbar-actions hero-actions">
+          <button className="primary-button ai-action" onClick={() => setViewMode("work")} type="button">
+            <WandSparkles size={16} />
+            Open AI studio
+          </button>
+          <button className="ghost-button" onClick={() => setViewMode("notes")} type="button">
+            <Plus size={16} />
+            Capture note
           </button>
         </div>
       </section>
@@ -765,6 +944,127 @@ function App() {
         <div className="sync-banner" role="status">
           {message}
         </div>
+      )}
+
+      {viewMode === "home" && (
+        <section className="home-page">
+          <section className="hero-panel">
+            <div>
+              <p className="eyebrow">Live workspace</p>
+              <h2>Move the day forward</h2>
+              <p className="context-copy">
+                A faster launchpad for urgent work, reminders, notes, project status, and AI-ready drafting.
+              </p>
+            </div>
+            <div className="hero-stat-grid">
+              <button className="hero-stat urgent" onClick={() => setViewMode("reminders")} type="button">
+                <strong>{reminderPlanner.overdue.length + reminderPlanner.today.length}</strong>
+                <span>Due now</span>
+              </button>
+              <button className="hero-stat progress" onClick={() => setViewMode("work")} type="button">
+                <strong>{summary.inProgress}</strong>
+                <span>In progress</span>
+              </button>
+              <button className="hero-stat notes" onClick={() => setViewMode("notes")} type="button">
+                <strong>{noteEntryCount}</strong>
+                <span>Note entries</span>
+              </button>
+              <button className="hero-stat ai" onClick={() => setViewMode("work")} type="button">
+                <strong>{savedOutputs.length}</strong>
+                <span>AI outputs</span>
+              </button>
+            </div>
+          </section>
+
+          <section className="home-grid">
+            <section className="panel focus-panel">
+              <div className="result-header">
+                <h2>
+                  <ListTodo size={18} />
+                  Focus queue
+                </h2>
+                <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
+                  View all
+                </button>
+              </div>
+              <div className="all-task-list">
+                {activeFocusTasks.map((item) => (
+                  <button key={item.id} className={taskClassName(item, activeWorkTaskId)} onClick={() => openWorkTask(item)} type="button">
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{projects[item.projectId].name} - {item.category} - {item.status}</small>
+                    </span>
+                    <small>{taskDateLabel(item)}</small>
+                  </button>
+                ))}
+                {activeFocusTasks.length === 0 && <p className="empty">No active tasks. Lovely clean slate.</p>}
+              </div>
+            </section>
+
+            <section className="panel pulse-panel">
+              <div className="result-header">
+                <h2>
+                  <CalendarClock size={18} />
+                  Today
+                </h2>
+                <button className="ghost-button" onClick={() => setViewMode("reminders")} type="button">
+                  Planner
+                </button>
+              </div>
+              <div className="reminder-list">
+                {[...reminderPlanner.overdue, ...reminderPlanner.today].slice(0, 5).map((item) => (
+                  <button className={`reminder-title home-reminder ${reminderState(item, now)}`} key={item.id} onClick={() => openWorkTask(item)} type="button">
+                    <strong>{item.title}</strong>
+                    <span>{projects[item.projectId].name} - {reminderLabel(item, now)}</span>
+                  </button>
+                ))}
+                {reminderPlanner.overdue.length + reminderPlanner.today.length === 0 && <p className="empty">No reminders due today.</p>}
+              </div>
+            </section>
+
+            <section className="panel notes-snapshot">
+              <div className="result-header">
+                <h2>
+                  <StickyNote size={18} />
+                  Recent notes
+                </h2>
+                <button className="ghost-button" onClick={() => setViewMode("notes")} type="button">
+                  Open notes
+                </button>
+              </div>
+              <div className="note-snapshot-list">
+                {recentNotes.map((note) => (
+                  <button className="note-snapshot" key={note.id} onClick={() => setViewMode("notes")} type="button">
+                    <span className={`project-chip project-${note.projectId}`}>{projects[note.projectId].name}</span>
+                    <strong>{note.title}</strong>
+                    <small>{note.entries[0]?.content || "No entries yet"}</small>
+                  </button>
+                ))}
+                {recentNotes.length === 0 && <p className="empty">Capture notes and reference information here.</p>}
+              </div>
+            </section>
+
+            <section className="panel ai-panel">
+              <div className="result-header">
+                <h2>
+                  <Sparkles size={18} />
+                  AI studio
+                </h2>
+              </div>
+              <p className="context-copy">Turn task notes, uploaded documents, PowerPoint text, and checklists into document drafts, summaries, reports, and emails.</p>
+              <div className="ai-studio-actions">
+                <button className="primary-button ai-action" onClick={() => setViewMode("work")} type="button">
+                  <WandSparkles size={16} />
+                  Prepare prompt
+                </button>
+                <button className="ghost-button" onClick={() => setViewMode("projects")} type="button">
+                  <BarChart3 size={16} />
+                  Project view
+                </button>
+              </div>
+            </section>
+          </section>
+        </section>
       )}
 
       {viewMode === "mobile" && (
@@ -906,9 +1206,15 @@ function App() {
                 <CalendarClock size={18} />
                 Today
               </h2>
-              <button className="ghost-button" onClick={() => setViewMode("reminders")} type="button">
-                Planner
-              </button>
+              <div className="mobile-section-actions">
+                <button className="ghost-button" onClick={() => void enableNotifications()} type="button">
+                  <BellRing size={15} />
+                  Alerts
+                </button>
+                <button className="ghost-button" onClick={() => setViewMode("reminders")} type="button">
+                  Planner
+                </button>
+              </div>
             </div>
             <div className="mobile-task-list">
               {[...reminderPlanner.overdue, ...reminderPlanner.today].map((item) => (
@@ -969,13 +1275,24 @@ function App() {
                 Plan today and upcoming work
               </h2>
               <p className="context-copy">
-                Reminders are now reviewed here instead of appearing as browser alerts. Overdue and today items are shown from the saved reminder date.
+                Review reminders here and enable browser notifications on each device that should alert you.
               </p>
             </div>
-            <div className="reminder-metrics">
-              <span><strong>{reminderPlanner.overdue.length}</strong> overdue</span>
-              <span><strong>{reminderPlanner.today.length}</strong> today</span>
-              <span><strong>{reminderPlanner.upcoming.length}</strong> upcoming</span>
+            <div className="reminder-hero-actions">
+              <div className="reminder-metrics">
+                <span><strong>{reminderPlanner.overdue.length}</strong> overdue</span>
+                <span><strong>{reminderPlanner.today.length}</strong> today</span>
+                <span><strong>{reminderPlanner.upcoming.length}</strong> upcoming</span>
+              </div>
+              <button
+                className={notificationPermission === "granted" ? "ghost-button success-button" : "primary-button"}
+                disabled={notificationPermission === "unsupported"}
+                onClick={() => void enableNotifications()}
+                type="button"
+              >
+                <BellRing size={16} />
+                {notificationPermission === "granted" ? "Notifications on" : "Enable notifications"}
+              </button>
             </div>
           </section>
 
@@ -1066,6 +1383,103 @@ function App() {
                 {reminderPlanner.unscheduled.length === 0 && <p className="empty">Every open task has a reminder, or there are no open tasks.</p>}
               </div>
             </section>
+          </section>
+        </section>
+      )}
+
+      {viewMode === "notes" && (
+        <section className="notes-page">
+          <section className="panel notes-compose">
+            <div className="result-header">
+              <h2>
+                <StickyNote size={18} />
+                Important notes
+              </h2>
+              <span className="subtle-count">{notes.reduce((total, note) => total + note.entries.length, 0)} entries</span>
+            </div>
+            <div className="note-compose-grid">
+              <label>
+                Project
+                <select value={projectId} onChange={(event) => updateProject(event.target.value as ProjectId)}>
+                  {(Object.keys(projects) as ProjectId[]).map((id) => (
+                    <option key={id} value={id}>
+                      {projects[id].name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Title
+                <input
+                  value={noteDraft.title}
+                  onChange={(event) => setNoteDraft((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Reference, decision, contact detail..."
+                />
+              </label>
+            </div>
+            <label>
+              Information
+              <textarea
+                className="small-textarea"
+                value={noteDraft.content}
+                onChange={(event) => setNoteDraft((current) => ({ ...current, content: event.target.value }))}
+                placeholder="Store important information that is not yet a task."
+              />
+            </label>
+            <button className="primary-button" onClick={createNote} type="button">
+              <Save size={16} />
+              Save note
+            </button>
+          </section>
+
+          <section className="notes-grid">
+            {[...notes]
+              .sort((a, b) => Number(b.pinned) - Number(a.pinned) || dateValue(b.updatedAt) - dateValue(a.updatedAt))
+              .map((note) => (
+                <article className={note.pinned ? "note-card pinned" : "note-card"} key={note.id}>
+                  <div className="note-card-header">
+                    <span className={`project-chip project-${note.projectId}`}>{projects[note.projectId].name}</span>
+                    <button className="ghost-button icon-button" onClick={() => updateNote(note.id, { pinned: !note.pinned })} type="button" title={note.pinned ? "Unpin note" : "Pin note"}>
+                      <Pin size={15} />
+                    </button>
+                  </div>
+                  <input
+                    className="note-title-input"
+                    value={note.title}
+                    onChange={(event) => updateNote(note.id, { title: event.target.value })}
+                  />
+                  <div className="note-entry-list">
+                    {note.entries.map((entry) => (
+                      <div className="note-entry" key={entry.id}>
+                        <textarea
+                          className="note-content-input"
+                          value={entry.content}
+                          onChange={(event) => updateNoteEntry(note.id, entry.id, event.target.value)}
+                          placeholder="Add note detail..."
+                        />
+                        <div className="note-entry-footer">
+                          <small>{new Date(entry.updatedAt).toLocaleString()}</small>
+                          <button className="ghost-button icon-button" onClick={() => removeNoteEntry(note.id, entry.id)} type="button" title="Delete this note entry">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {note.entries.length === 0 && <p className="empty compact-empty">No entries under this title yet.</p>}
+                  </div>
+                  <div className="note-footer">
+                    <small>{note.entries.length} {note.entries.length === 1 ? "entry" : "entries"}</small>
+                    <button className="ghost-button" onClick={() => addNoteEntry(note.id)} type="button">
+                      <Plus size={15} />
+                      Add entry
+                    </button>
+                    <button className="ghost-button icon-button" onClick={() => removeNote(note.id)} type="button" title="Delete note">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </article>
+              ))}
+            {notes.length === 0 && <p className="empty">Save useful reference information here. Notes sync with the same database as your tasks.</p>}
           </section>
         </section>
       )}
@@ -1221,11 +1635,14 @@ function App() {
             </div>
           </section>
 
-          <section className="panel">
-            <h2>
-              <Sparkles size={18} />
-              Task templates
-            </h2>
+          <details className="panel template-drawer">
+            <summary>
+              <span>
+                <Sparkles size={18} />
+                Task templates
+              </span>
+              <small>{task.label}</small>
+            </summary>
             <div className="task-list">
               {project.tasks.map((item) => (
                 <button key={item.id} className={taskId === item.id ? "task-card selected" : "task-card"} onClick={() => selectTemplate(item.id)} type="button">
@@ -1234,7 +1651,7 @@ function App() {
                 </button>
               ))}
             </div>
-          </section>
+          </details>
 
           <section className="panel history-panel">
             <h2>
@@ -1572,6 +1989,7 @@ function App() {
       </div>
         </>
       )}
+      </section>
     </main>
   );
 }
@@ -1800,6 +2218,64 @@ function normalizeWorkTask(task: WorkTask): WorkTask {
     createdAt: task.createdAt || new Date().toISOString(),
     updatedAt: task.updatedAt || task.createdAt || new Date().toISOString(),
   };
+}
+
+function normalizeNote(note: AppNote): AppNote {
+  const fallbackProjectId = note.projectId && projects[note.projectId] ? note.projectId : "avbob";
+  const timestamp = note.updatedAt || note.createdAt || new Date().toISOString();
+  const legacyContent = typeof note.content === "string" ? note.content.trim() : "";
+  const entries = Array.isArray(note.entries)
+    ? note.entries.map(normalizeNoteEntry)
+    : legacyContent
+      ? [{ id: createId(), content: legacyContent, createdAt: timestamp, updatedAt: timestamp }]
+      : [];
+  return {
+    ...note,
+    projectId: fallbackProjectId,
+    title: note.title || "Untitled note",
+    entries,
+    pinned: Boolean(note.pinned),
+    createdAt: note.createdAt || new Date().toISOString(),
+    updatedAt: timestamp,
+  };
+}
+
+function normalizeNoteEntry(entry: AppNoteEntry): AppNoteEntry {
+  return {
+    id: entry.id || createId(),
+    content: entry.content ?? "",
+    createdAt: entry.createdAt || new Date().toISOString(),
+    updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString(),
+  };
+}
+
+function reminderTriggerId(task: WorkTask) {
+  return `${task.id}:${task.reminderAt}`;
+}
+
+async function notifyReminder(task: WorkTask) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+
+  const title = `Reminder: ${task.title}`;
+  const options: NotificationOptions = {
+    body: `${projects[task.projectId].name} - ${reminderLabel(task, Date.now())}`,
+    badge: "/pwa-icon.svg",
+    icon: "/pwa-icon.svg",
+    tag: `task-reminder-${task.id}`,
+  };
+
+  try {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration?.showNotification) {
+        await registration.showNotification(title, options);
+        return;
+      }
+    }
+    new Notification(title, options);
+  } catch {
+    new Notification(title, options);
+  }
 }
 
 function taskRequirements(projectId: ProjectId, templateId: string): Requirements {

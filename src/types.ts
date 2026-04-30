@@ -63,3 +63,21 @@ export type SavedOutput = {
   requirements: Requirements;
   result: string;
 };
+
+export type AppNoteEntry = {
+  id: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AppNote = {
+  id: string;
+  projectId: ProjectId;
+  title: string;
+  content?: string;
+  entries: AppNoteEntry[];
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+};

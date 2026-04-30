@@ -1,4 +1,4 @@
-import type { SavedOutput, WorkTask } from "./types";
+import type { AppNote, SavedOutput, WorkTask } from "./types";
 
 const dbName = "ai-workbench-db";
 const dbVersion = 1;
@@ -82,6 +82,14 @@ export function getOutputs() {
 export async function saveOutput(output: SavedOutput) {
   await put(outputStore, output);
   await remoteUpsertPayload("saved_outputs", output.id, output, output.createdAt);
+}
+
+export function getNotes() {
+  return getMeta<AppNote[]>("appNotes", []);
+}
+
+export function saveNotes(notes: AppNote[]) {
+  return setMeta("appNotes", notes);
 }
 
 export async function getMeta<T>(key: string, fallback: T) {

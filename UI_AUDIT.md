@@ -1,6 +1,6 @@
 # UI Audit
 
-Date: 2026-04-29
+Date: 2026-04-30
 
 ## Assessment
 
@@ -14,6 +14,12 @@ The app is an operational workbench, not a marketing site. A world-class directi
 - Improved laptop layout polish with a sticky navigation bar, responsive task creation controls, clearer focus states, and sharper panel styling.
 - Improved mobile responsiveness for navigation and task controls so actions remain reachable without horizontal layout pressure.
 - Reworked the reminder planner into a compact schedule board: overdue, today, upcoming, and planning queue are visible together with internal scrolling instead of one long page.
+- Added a device-level notification control to the reminder planner so desktop and installed PWA users can explicitly enable reminder alerts.
+- Added project-aware notes for important reference information that should not become a task.
+- Collapsed the template list into an on-demand drawer so templates no longer interrupt scrolling through task details and project information.
+- Rebuilt the app shell around a persistent navigation rail and command header, reducing topbar clutter and making the product feel more like a focused workspace.
+- Added a Home dashboard that surfaces due reminders, active work, recent notes, and AI output activity as the first screen.
+- Refreshed the visual system with stronger status gradients, glass-like panels, richer task rows, and a distinct AI Studio action treatment.
 - Standardized the status color system across task cards, summary cards, reminder rows, and status pills.
 - Reduced card padding and vertical gaps so laptop users can scan more tasks and reminders without losing context.
 

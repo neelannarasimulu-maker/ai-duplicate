@@ -1,4 +1,4 @@
-const CACHE_NAME = "ai-workbench-v4";
+const CACHE_NAME = "ai-workbench-v5";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/pwa-icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -36,5 +36,16 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/"))),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ includeUncontrolled: true, type: "window" }).then((clients) => {
+      const client = clients.find((item) => "focus" in item);
+      if (client) return client.focus();
+      return self.clients.openWindow("/");
+    }),
   );
 });
