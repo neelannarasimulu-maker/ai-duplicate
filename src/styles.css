@@ -159,7 +159,19 @@ summary:focus-visible {
 
 .rail-actions {
   border-top: 1px solid rgba(255, 255, 255, 0.12);
+  gap: 12px;
   padding-top: 12px;
+}
+
+.rail-actions .danger-button {
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.rail-clear-button {
+  background: rgba(255, 246, 244, 0.12);
+  border-color: rgba(255, 181, 167, 0.35);
+  color: #ffd5ce;
 }
 
 .topbar {

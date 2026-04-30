@@ -859,6 +859,11 @@ function App() {
   }
 
   function clearWorkspace() {
+    const confirmed = window.confirm(
+      "Clear the current AI workspace? This removes the source input, uploaded assets, prompt, output, and output requirements for the currently selected task. It will not delete tasks, notes, reminders, or saved history.",
+    );
+    if (!confirmed) return;
+
     setInput("");
     setAssets([]);
     setRequirements(defaultRequirements);
@@ -915,9 +920,9 @@ function App() {
             <History size={16} />
             {syncing ? "Syncing" : "Sync"}
           </button>
-          <button className="ghost-button" onClick={clearWorkspace} type="button" title="Clear current AI workspace">
+          <button className="danger-button rail-clear-button" onClick={clearWorkspace} type="button" title="Clear only the selected task AI workspace">
             <Trash2 size={16} />
-            Clear
+            Clear AI workspace
           </button>
         </div>
       </aside>
