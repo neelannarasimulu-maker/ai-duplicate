@@ -13,6 +13,13 @@ The app is an operational workbench, not a marketing site. A world-class directi
 - Added focused hover, focus, and panel entrance animations with `prefers-reduced-motion` support.
 - Improved laptop layout polish with a sticky navigation bar, responsive task creation controls, clearer focus states, and sharper panel styling.
 - Improved mobile responsiveness for navigation and task controls so actions remain reachable without horizontal layout pressure.
+- Reworked the reminder planner into a compact schedule board: overdue, today, upcoming, and planning queue are visible together with internal scrolling instead of one long page.
+- Standardized the status color system across task cards, summary cards, reminder rows, and status pills.
+- Reduced card padding and vertical gaps so laptop users can scan more tasks and reminders without losing context.
+
+## Current Design Direction
+
+The leading-task-app benchmark is a calm scheduler board: status and urgency should be visible in under a second, editing should be inline where possible, and reminder planning should keep overdue/today/upcoming work in one viewport. Color is used as a status language, not decoration.
 
 ## Remaining Product Recommendations
 

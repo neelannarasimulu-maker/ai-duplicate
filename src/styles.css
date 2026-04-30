@@ -1,4 +1,18 @@
 :root {
+  --status-open: #0f9f7a;
+  --status-open-bg: #e9fbf5;
+  --status-progress: #2166d5;
+  --status-progress-bg: #edf4ff;
+  --status-blocked: #8b3fd1;
+  --status-blocked-bg: #f5efff;
+  --status-later: #5c6778;
+  --status-later-bg: #f1f4f7;
+  --status-closed: #4f46e5;
+  --status-closed-bg: #f0efff;
+  --status-urgent: #d92d5c;
+  --status-urgent-bg: #fff0f4;
+  --status-reminder: #b86b00;
+  --status-reminder-bg: #fff7e8;
   color: #121424;
   background: #f4f6fb;
   font-family:
@@ -282,13 +296,13 @@ summary:focus-visible {
 
 .reminder-page {
   display: grid;
-  gap: 16px;
+  gap: 14px;
 }
 
 .reminder-hero {
   align-items: center;
   display: grid;
-  gap: 16px;
+  gap: 14px;
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
@@ -314,45 +328,100 @@ summary:focus-visible {
   font-size: 1.35rem;
 }
 
-.reminder-columns {
+.reminder-planner-layout {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+}
+
+.reminder-main-board {
   align-items: start;
   display: grid;
-  gap: 16px;
+  gap: 12px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .reminder-column {
-  min-height: 220px;
+  display: grid;
+  gap: 10px;
+  max-height: calc(100vh - 250px);
+  min-height: 260px;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.reminder-column .result-header {
+  border-bottom: 1px solid #edf0fa;
+  padding-bottom: 10px;
+}
+
+.reminder-column .reminder-list,
+.reminder-unscheduled-panel .reminder-list {
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.reminder-unscheduled-panel {
+  align-self: start;
+  display: grid;
+  gap: 10px;
+  max-height: calc(100vh - 250px);
+  overflow: hidden;
+  padding: 14px;
 }
 
 .reminder-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .reminder-row {
-  align-items: center;
-  border: 1px solid #e0e5ff;
+  align-items: end;
+  background: #ffffff;
+  border: 1px solid #dce2f4;
   border-radius: 8px;
   display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 240px) auto auto;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
   padding: 10px;
 }
 
+.reminder-row:not(.compact) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.reminder-row.compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.reminder-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.reminder-actions button,
+.reminder-row > button {
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
 .reminder-row.overdue {
-  background: #fff0f4;
-  border-color: #ff9bb7;
+  background: var(--status-urgent-bg);
+  border-color: #f4a3b8;
+  box-shadow: inset 4px 0 0 var(--status-urgent);
 }
 
 .reminder-row.today {
-  background: #fffaf0;
-  border-color: #ffd166;
+  background: var(--status-reminder-bg);
+  border-color: #f2c168;
+  box-shadow: inset 4px 0 0 var(--status-reminder);
 }
 
 .reminder-row.upcoming {
-  background: #f3fffb;
-  border-color: #90efd4;
+  background: var(--status-open-bg);
+  border-color: #96dec7;
+  box-shadow: inset 4px 0 0 var(--status-open);
 }
 
 .reminder-title {
@@ -364,6 +433,10 @@ summary:focus-visible {
   min-height: 0;
   padding: 0;
   text-align: left;
+}
+
+.reminder-title strong {
+  line-height: 1.25;
 }
 
 .reminder-title span,
@@ -453,9 +526,9 @@ summary:focus-visible {
 
 .summary-grid {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   grid-template-columns: repeat(8, minmax(0, 1fr));
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .summary-card {
@@ -463,8 +536,8 @@ summary:focus-visible {
   color: #ffffff;
   display: grid;
   gap: 4px;
-  min-height: 86px;
-  padding: 16px;
+  min-height: 78px;
+  padding: 14px;
 }
 
 .summary-card strong {
@@ -476,14 +549,14 @@ summary:focus-visible {
   font-weight: 800;
 }
 
-.summary-total { background: #2147d9; }
-.summary-open { background: #008f7a; }
-.summary-progress { background: #0877c9; }
-.summary-blocked { background: #7045c8; }
-.summary-later { background: #526070; }
-.summary-urgent { background: #d73764; }
-.summary-reminders { background: #c97900; }
-.summary-complete { background: #554be8; }
+.summary-total { background: #1d2433; }
+.summary-open { background: var(--status-open); }
+.summary-progress { background: var(--status-progress); }
+.summary-blocked { background: var(--status-blocked); }
+.summary-later { background: var(--status-later); }
+.summary-urgent { background: var(--status-urgent); }
+.summary-reminders { background: var(--status-reminder); }
+.summary-complete { background: var(--status-closed); }
 
 .eyebrow {
   color: #5f6b63;
@@ -519,16 +592,18 @@ h2 {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 18px;
+  gap: 6px;
+  margin: 0 0 14px;
 }
 
 .step {
   background: #ffffff;
   border: 1px solid #d8ddff;
+  border-radius: 999px;
   color: #495170;
-  font-size: 0.86rem;
-  padding: 7px 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 6px 10px;
 }
 
 .step.done {
@@ -540,14 +615,14 @@ h2 {
 .layout {
   align-items: start;
   display: grid;
-  gap: 18px;
-  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+  gap: 14px;
+  grid-template-columns: minmax(240px, 286px) minmax(0, 1fr);
 }
 
 .sidebar,
 .work-area {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .panel {
@@ -556,7 +631,7 @@ h2 {
   border: 1px solid #dce2f4;
   border-radius: 8px;
   box-shadow: 0 14px 35px rgba(18, 20, 36, 0.05);
-  padding: 18px;
+  padding: 16px;
 }
 
 .new-task-control {
@@ -597,7 +672,7 @@ h2 {
   color: #5b6860;
   font-size: 0.92rem;
   line-height: 1.5;
-  margin: 12px 0 0;
+  margin: 10px 0 0;
 }
 
 .task-list,
@@ -614,6 +689,8 @@ h2 {
   display: grid;
   gap: 4px;
   justify-content: stretch;
+  min-height: 0;
+  padding: 10px;
   text-align: left;
   width: 100%;
 }
@@ -630,13 +707,13 @@ h2 {
 }
 
 .history-panel {
-  max-height: 410px;
+  max-height: 330px;
   overflow: auto;
 }
 
 .task-editor {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -646,13 +723,18 @@ h2 {
 
 .work-task {
   align-items: center;
+  background: #ffffff;
+  border: 1px solid #dce2f4;
   border-radius: 8px;
   display: grid;
   gap: 10px;
   grid-template-columns: 1fr auto;
   justify-content: stretch;
+  min-height: 54px;
+  padding: 10px 12px;
   text-align: left;
   width: 100%;
+  box-shadow: inset 4px 0 0 var(--task-status-color, #ccd4ff);
 }
 
 .work-task:hover {
@@ -676,8 +758,8 @@ h2 {
 
 .all-task-list {
   display: grid;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .filter-row {
@@ -686,46 +768,52 @@ h2 {
 }
 
 .work-task.status-open {
-  background: #f3fffb;
-  border-color: #90efd4;
+  --task-status-color: var(--status-open);
+  background: var(--status-open-bg);
+  border-color: #a6dfce;
 }
 
 .work-task.status-complete {
-  background: #f0eeff;
+  --task-status-color: var(--status-closed);
+  background: var(--status-closed-bg);
   border-color: #c9c4ff;
 }
 
 .work-task.status-in-progress {
-  background: #e9f6ff;
-  border-color: #94d7ff;
+  --task-status-color: var(--status-progress);
+  background: var(--status-progress-bg);
+  border-color: #abc8f5;
 }
 
 .work-task.status-blocked {
-  background: #f2eaff;
-  border-color: #c7a5ff;
+  --task-status-color: var(--status-blocked);
+  background: var(--status-blocked-bg);
+  border-color: #d0b2f2;
 }
 
 .work-task.status-to-do-later {
-  background: #f3f5f8;
+  --task-status-color: var(--status-later);
+  background: var(--status-later-bg);
   border-color: #cbd4df;
 }
 
 .work-task.status-closed {
-  background: #f0eeff;
+  --task-status-color: var(--status-closed);
+  background: var(--status-closed-bg);
   border-color: #c9c4ff;
 }
 
 .work-task.priority-high {
-  box-shadow: inset 4px 0 0 #ff9f1c;
+  box-shadow: inset 4px 0 0 var(--task-status-color, #ccd4ff), inset 8px 0 0 #ffb84d;
 }
 
 .work-task.priority-urgent {
-  box-shadow: inset 4px 0 0 #ff3d71;
+  box-shadow: inset 4px 0 0 var(--task-status-color, #ccd4ff), inset 8px 0 0 var(--status-urgent);
 }
 
 .work-task.overdue {
-  background: #fff0f4;
-  border-color: #ff9bb7;
+  background: var(--status-urgent-bg);
+  border-color: #f4a3b8;
 }
 
 .work-task.reminder-due {
@@ -753,12 +841,12 @@ h2 {
   padding: 6px 10px;
 }
 
-.status-open { background: #d7fff3; color: #006d5b; }
-.status-in-progress { background: #dff3ff; color: #005f99; }
-.status-blocked { background: #eee2ff; color: #5719b8; }
-.status-to-do-later { background: #edf1f5; color: #384656; }
-.status-complete { background: #e7e2ff; color: #4031c9; }
-.status-closed { background: #e7e2ff; color: #4031c9; }
+.status-open { background: var(--status-open-bg); color: #00654f; }
+.status-in-progress { background: var(--status-progress-bg); color: #174fa6; }
+.status-blocked { background: var(--status-blocked-bg); color: #6c24aa; }
+.status-to-do-later { background: var(--status-later-bg); color: #384656; }
+.status-complete { background: var(--status-closed-bg); color: #3c36b3; }
+.status-closed { background: var(--status-closed-bg); color: #3c36b3; }
 .priority-low { background: #e7f0ff; color: #2452b8; }
 .priority-normal { background: #e9f8ee; color: #237047; }
 .priority-high { background: #fff1d6; color: #9b5700; }
@@ -770,12 +858,12 @@ h2 {
 }
 
 .dashboard-panel {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .project-dashboard-grid {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -785,7 +873,8 @@ h2 {
   display: grid;
   gap: 8px;
   justify-content: stretch;
-  min-height: 132px;
+  min-height: 124px;
+  padding: 14px;
   text-align: left;
 }
 
@@ -806,7 +895,7 @@ h2 {
 .mini-status-grid {
   display: grid;
   gap: 6px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .mini-status-grid small,
@@ -822,14 +911,14 @@ h2 {
 }
 
 .project-stat-columns {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 16px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 14px;
 }
 
 .project-detail-list {
   display: grid;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .project-stat-row {
@@ -1105,9 +1194,15 @@ label {
   }
 
   .reminder-hero,
-  .reminder-columns,
+  .reminder-planner-layout,
+  .reminder-main-board,
   .reminder-row {
     grid-template-columns: 1fr;
+  }
+
+  .reminder-column,
+  .reminder-unscheduled-panel {
+    max-height: none;
   }
 
   .inline-save-field {

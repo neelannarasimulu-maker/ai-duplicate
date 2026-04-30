@@ -979,82 +979,93 @@ function App() {
             </div>
           </section>
 
-          <section className="reminder-columns">
-            <ReminderColumn
-              emptyText="No overdue reminders."
-              items={reminderPlanner.overdue}
-              now={now}
-              onClear={clearReminder}
-              onOpen={(item) => {
-                openWorkTask(item);
-                setViewMode("work");
-              }}
-              onSave={saveReminder}
-              onSchedule={updateReminder}
-              reminderValue={reminderValue}
-              title="Overdue"
-            />
-            <ReminderColumn
-              emptyText="Nothing planned for today."
-              items={reminderPlanner.today}
-              now={now}
-              onClear={clearReminder}
-              onOpen={(item) => {
-                openWorkTask(item);
-                setViewMode("work");
-              }}
-              onSave={saveReminder}
-              onSchedule={updateReminder}
-              reminderValue={reminderValue}
-              title="Today"
-            />
-            <ReminderColumn
-              emptyText="No upcoming reminders."
-              items={reminderPlanner.upcoming}
-              now={now}
-              onClear={clearReminder}
-              onOpen={(item) => {
-                openWorkTask(item);
-                setViewMode("work");
-              }}
-              onSave={saveReminder}
-              onSchedule={updateReminder}
-              reminderValue={reminderValue}
-              title="Upcoming"
-            />
-          </section>
+          <section className="reminder-planner-layout">
+            <section className="reminder-main-board">
+              <ReminderColumn
+                emptyText="No overdue reminders."
+                items={reminderPlanner.overdue}
+                now={now}
+                onClear={clearReminder}
+                onOpen={(item) => {
+                  openWorkTask(item);
+                  setViewMode("work");
+                }}
+                onSave={saveReminder}
+                onSchedule={updateReminder}
+                reminderValue={reminderValue}
+                title="Overdue"
+              />
+              <ReminderColumn
+                emptyText="Nothing planned for today."
+                items={reminderPlanner.today}
+                now={now}
+                onClear={clearReminder}
+                onOpen={(item) => {
+                  openWorkTask(item);
+                  setViewMode("work");
+                }}
+                onSave={saveReminder}
+                onSchedule={updateReminder}
+                reminderValue={reminderValue}
+                title="Today"
+              />
+              <ReminderColumn
+                emptyText="No upcoming reminders."
+                items={reminderPlanner.upcoming}
+                now={now}
+                onClear={clearReminder}
+                onOpen={(item) => {
+                  openWorkTask(item);
+                  setViewMode("work");
+                }}
+                onSave={saveReminder}
+                onSchedule={updateReminder}
+                reminderValue={reminderValue}
+                title="Upcoming"
+              />
+            </section>
 
-          <section className="panel">
-            <div className="result-header">
-              <h2>
-                <ListTodo size={18} />
-                Tasks without reminders
-              </h2>
-              <span className="subtle-count">{reminderPlanner.unscheduled.length} open tasks</span>
-            </div>
-            <div className="reminder-list">
-              {reminderPlanner.unscheduled.map((item) => (
-                <div className="reminder-row" key={item.id}>
-                  <button className="reminder-title" onClick={() => openWorkTask(item)} type="button">
-                    <strong>{item.title}</strong>
-                    <span>{projects[item.projectId].name} - {item.category} - {item.priority}</span>
-                  </button>
-                  <button className="ghost-button" onClick={() => scheduleReminderToday(item.id)} type="button">
-                    <CalendarClock size={15} />
-                    Plan today
-                  </button>
-                  <label>
-                    Reminder
-                    <input value={reminderValue(item)} onChange={(event) => updateReminder(item.id, event.target.value)} type="datetime-local" />
-                  </label>
-                  <button className="primary-button" onClick={() => saveReminder(item.id)} type="button">
-                    <Save size={15} />
-                    Save reminder
-                  </button>
-                </div>
-              ))}
-              {reminderPlanner.unscheduled.length === 0 && <p className="empty">Every open task has a reminder, or there are no open tasks.</p>}
-            </div>
+            <section className="panel reminder-unscheduled-panel">
+              <div className="result-header">
+                <h2>
+                  <ListTodo size={18} />
+                  Planning queue
+                </h2>
+                <span className="subtle-count">{reminderPlanner.unscheduled.length}</span>
+              </div>
+              <div className="reminder-list">
+                {reminderPlanner.unscheduled.map((item) => (
+                  <div className="reminder-row compact" key={item.id}>
+                    <button
+                      className="reminder-title"
+                      onClick={() => {
+                        openWorkTask(item);
+                        setViewMode("work");
+                      }}
+                      type="button"
+                    >
+                      <strong>{item.title}</strong>
+                      <span>{projects[item.projectId].name} - {item.category} - {item.priority}</span>
+                    </button>
+                    <div className="reminder-actions">
+                      <button className="ghost-button" onClick={() => scheduleReminderToday(item.id)} type="button">
+                        <CalendarClock size={15} />
+                        Today
+                      </button>
+                      <button className="primary-button" onClick={() => saveReminder(item.id)} type="button">
+                        <Save size={15} />
+                        Save
+                      </button>
+                    </div>
+                    <label>
+                      Reminder
+                      <input value={reminderValue(item)} onChange={(event) => updateReminder(item.id, event.target.value)} type="datetime-local" />
+                    </label>
+                  </div>
+                ))}
+                {reminderPlanner.unscheduled.length === 0 && <p className="empty">Every open task has a reminder, or there are no open tasks.</p>}
+              </div>
+            </section>
           </section>
         </section>
       )}
