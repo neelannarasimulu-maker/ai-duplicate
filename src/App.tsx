@@ -24,7 +24,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { Document, Packer, Paragraph, TextRun } from "docx";
+import { AlignmentType, Document, Footer, Header, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import {
   deleteTask,
   getStorageBackendLabel,
@@ -38,7 +38,21 @@ import {
   saveTask,
   setMeta,
 } from "./storage";
-import type { AppNote, AppNoteEntry, ChecklistItem, Format, InputAsset, Priority, ProjectId, Requirements, SavedOutput, TaskStatus, WorkTask } from "./types";
+import type {
+  AppNote,
+  AppNoteEntry,
+  ChecklistItem,
+  Format,
+  InputAsset,
+  OutputTemplate,
+  OutputTemplateFormat,
+  Priority,
+  ProjectId,
+  Requirements,
+  SavedOutput,
+  TaskStatus,
+  WorkTask,
+} from "./types";
 
 type TaskTemplate = {
   id: string;
@@ -55,7 +69,7 @@ const requirementPresets = {
     tone: "Clear, practical, and neutral",
     audience: "Internal team",
     length: "Medium",
-    sections: "Executive summary, Key facts, Decisions or implications, Risks or gaps, Action items",
+    sections: "Executive summary, Key facts, Key assumptions, Decisions or implications, Risks or gaps, Confidence level, Action items",
     constraints: "Separate confirmed facts from assumptions. Keep the wording easy to reuse in a document.",
     imageRequirements: "",
   },
@@ -65,7 +79,7 @@ const requirementPresets = {
     tone: "Professional and clear",
     audience: "Internal team",
     length: "Detailed",
-    sections: "Title, Purpose, Background, Main content, Recommendations, Next steps",
+    sections: "Title, Purpose, Background, Problem statement, Financial or operational impact, Main content, Recommendations, Next steps",
     constraints: "Produce a complete document, not notes about the document. Use headings and concise paragraphs.",
     imageRequirements: "",
   },
@@ -75,7 +89,7 @@ const requirementPresets = {
     tone: "Warm, concise, and professional",
     audience: "Recipient named in the source notes",
     length: "Short",
-    sections: "Subject line, Email body, Optional follow-up note",
+    sections: "Subject line, Email body, Desired outcome, Optional follow-up note",
     constraints: "Write ready-to-send email copy. Include a clear ask or next step where appropriate.",
     imageRequirements: "",
   },
@@ -85,7 +99,7 @@ const requirementPresets = {
     tone: "Evidence-led and businesslike",
     audience: "Decision makers",
     length: "Detailed",
-    sections: "Executive summary, Context, Findings, Evidence, Risks, Recommendations, Next steps",
+    sections: "Executive summary, Context, Methodology, Findings, Evidence, Risks, Limitations, Recommendations, Next steps",
     constraints: "Make the report useful for decisions. Flag missing evidence clearly.",
     imageRequirements: "",
   },
@@ -95,7 +109,7 @@ const requirementPresets = {
     tone: "Concise, structured, and decision-focused",
     audience: "Meeting attendees and decision makers",
     length: "Medium",
-    sections: "Purpose, Agenda, Current status, Key discussion points, Risks, Decisions needed, Actions",
+    sections: "Purpose, Desired outcomes, Pre-read required, Agenda, Current status, Key discussion points, Risks, Decisions needed, Actions",
     constraints: "Use the source notes to prepare a practical meeting pack. Separate discussion points from decisions needed.",
     imageRequirements: "",
   },
@@ -105,7 +119,7 @@ const requirementPresets = {
     tone: "Analytical, balanced, and commercially useful",
     audience: "Business development and leadership team",
     length: "Detailed",
-    sections: "Executive summary, Company profile, Market context, Opportunity fit, Risks and unknowns, Recommended next steps",
+    sections: "Executive summary, Company profile, Market context, Competitive positioning, Opportunity fit, Commercial relevance to us, Risks and unknowns, Recommended next steps",
     constraints: "Distinguish source-provided facts from assumptions. Include gaps that need verification.",
     imageRequirements: "",
   },
@@ -115,7 +129,7 @@ const requirementPresets = {
     tone: "Confident, useful, and client-ready",
     audience: "Client or sponsor",
     length: "Detailed",
-    sections: "Overview, Client need, Proposed approach, Deliverables, Timeline, Assumptions, Next steps",
+    sections: "Overview, Client need, Proposed approach, Deliverables, Value / ROI case, Success metrics, Timeline, Assumptions, Next steps",
     constraints: "Avoid generic sales language. Convert rough notes into concrete proposed work.",
     imageRequirements: "",
   },
@@ -125,7 +139,7 @@ const requirementPresets = {
     tone: "Clear, structured, and presentation-ready",
     audience: "Meeting audience",
     length: "Medium",
-    sections: "Slide title, Slide bullets, Speaker notes, Closing action",
+    sections: "Slide title, Key message, Slide bullets, Speaker notes, Visual direction, Closing action",
     constraints: "Keep slide bullets short. Put detail in speaker notes.",
     imageRequirements: "Suggest useful visuals, charts, or screenshots where they would improve the presentation.",
   },
@@ -135,7 +149,7 @@ const requirementPresets = {
     tone: "Plain, precise, and operational",
     audience: "People following the process",
     length: "Detailed",
-    sections: "Purpose, Scope, Roles, Steps, Exceptions, Checklist, Owner and review date",
+    sections: "Purpose, Scope, Roles, SLA / response expectations, Steps, Exceptions, Checklist, Owner and review date",
     constraints: "Write actionable steps in order. Include a checklist that can be ticked off.",
     imageRequirements: "",
   },
@@ -145,7 +159,7 @@ const requirementPresets = {
     tone: "Clear, calm, and accountable",
     audience: "Client, sponsor, or internal stakeholder",
     length: "Short",
-    sections: "Subject line, Status summary, Progress, Risks or blockers, Decisions needed, Next steps",
+    sections: "Subject line, Overall status indicator (Green / Amber / Red), Status summary, Progress, Risks or blockers, Impact if risks materialise, Decisions needed, Next steps",
     constraints: "Write copy that can be sent or pasted into an email/message with minimal editing.",
     imageRequirements: "",
   },
@@ -157,6 +171,56 @@ const requirementPresets = {
     length: "Short",
     sections: "Checklist, Notes, Next steps",
     constraints: "Keep items tickable, specific, and easy to complete.",
+    imageRequirements: "",
+  },
+  decisionBrief: {
+    outputType: "Decision brief",
+    format: "Markdown",
+    tone: "Concise, executive, and decision-focused",
+    audience: "Decision makers",
+    length: "Medium",
+    sections: "Context, Problem, Options, Recommendation, Risks, Decision required",
+    constraints: "Frame the decision clearly and make the recommendation easy to accept, reject, or revise.",
+    imageRequirements: "",
+  },
+  strategyVision: {
+    outputType: "Strategy or vision document",
+    format: "Markdown",
+    tone: "Strategic, clear, and commercially grounded",
+    audience: "Leadership, partners, or project team",
+    length: "Detailed",
+    sections: "Vision, Problem space, Strategic pillars, Differentiation, Execution roadmap",
+    constraints: "Keep the strategy actionable. Connect vision to practical execution steps.",
+    imageRequirements: "",
+  },
+  productSpec: {
+    outputType: "Product or feature specification",
+    format: "Markdown",
+    tone: "Precise, practical, and implementation-ready",
+    audience: "Product, design, and engineering team",
+    length: "Detailed",
+    sections: "Objective, User roles, Functional requirements, User flows, Data requirements, Success criteria",
+    constraints: "Write requirements clearly enough for implementation planning. Flag unresolved product decisions.",
+    imageRequirements: "",
+  },
+  promptGenerator: {
+    outputType: "AI prompt generator",
+    format: "Markdown",
+    tone: "Direct, structured, and reusable",
+    audience: "AI assistant or prompt user",
+    length: "Medium",
+    sections: "Task objective, Input description, Output requirements, Formatting instructions, Constraints",
+    constraints: "Produce a ready-to-use prompt that another AI can follow without extra context.",
+    imageRequirements: "",
+  },
+  riskIssueLog: {
+    outputType: "Risk or issue log",
+    format: "Markdown",
+    tone: "Clear, accountable, and operational",
+    audience: "Project team and stakeholders",
+    length: "Medium",
+    sections: "Issue, Impact, Likelihood, Owner, Mitigation, Status",
+    constraints: "Make each risk or issue trackable with clear ownership and next action.",
     imageRequirements: "",
   },
 } satisfies Record<string, Requirements>;
@@ -173,29 +237,35 @@ const commonTasks: TaskTemplate[] = [
   { id: "process-document", label: "Process/support document", description: "Document operational steps, roles, exceptions, and a tickable process checklist.", category: "Operations", requirements: requirementPresets.process },
   { id: "presentation-text", label: "Presentation text", description: "Create slide-ready bullets with practical speaker notes.", category: "Presentation", requirements: requirementPresets.presentation },
   { id: "checklist", label: "Checklist or shopping list", description: "Create tickable items for shopping, subtasks, admin, or follow-up work.", category: "Checklist", requirements: requirementPresets.checklist },
+  { id: "decision-brief", label: "Decision brief", description: "Prepare executive decision support with options, recommendation, risks, and decision needed.", category: "Strategy", requirements: requirementPresets.decisionBrief },
+  { id: "strategy-vision", label: "Strategy/vision document", description: "Shape vision, strategic pillars, differentiation, and a practical execution roadmap.", category: "Strategy", requirements: requirementPresets.strategyVision },
+  { id: "product-feature-spec", label: "Product/feature spec", description: "Define objectives, users, requirements, flows, data needs, and success criteria for build work.", category: "Product", requirements: requirementPresets.productSpec },
+  { id: "ai-prompt-generator", label: "AI prompt generator", description: "Create a reusable prompt with objective, inputs, output rules, formatting, and constraints.", category: "AI", requirements: requirementPresets.promptGenerator },
+  { id: "risk-issue-log", label: "Risk/issue log", description: "Track issues, impact, likelihood, ownership, mitigation, and status.", category: "Planning", requirements: requirementPresets.riskIssueLog },
 ];
+
+const legacyTemplateMap: Record<string, string> = {
+  "client-communication": "draft-email",
+  "summarize-documents": "summarize",
+  "advisory-forum": "meeting-brief",
+  "support-process": "process-document",
+  "banking-documents": "draft-document",
+  "process-notes": "process-document",
+  "banking-client-update": "client-update",
+  "bd-opportunity-note": "market-research",
+  "customer-success-update": "client-update",
+};
 
 const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTemplate[] }> = {
   avbob: {
     name: "AVBOB",
     context: "Client communication, document preparation, reports, presentations, and polished business content.",
-    tasks: [
-      { id: "client-communication", label: "Write client communication", description: "Turn notes into a ready-to-send client email or letter.", category: "Communication", requirements: requirementPresets.email },
-      { id: "summarize-documents", label: "Summarize documents", description: "Extract key points, risks, gaps, decisions, and action items.", category: "Analysis", requirements: requirementPresets.summary },
-      { id: "advisory-forum", label: "Advisory forum brief", description: "Prepare a concise meeting pack with risks, decisions, and actions.", category: "Planning", requirements: requirementPresets.meetingBrief },
-      { id: "support-process", label: "Support process document", description: "Draft customer support, technical support, escalation, and SLA process content.", category: "Operations", requirements: requirementPresets.process },
-      ...commonTasks,
-    ],
+    tasks: commonTasks,
   },
   naha: {
     name: "Naha Banking",
     context: "Banking-related drafts, client summaries, process notes, reports, proposals, and product copy.",
-    tasks: [
-      { id: "banking-documents", label: "Draft banking documents", description: "Create clear banking documents with assumptions and compliance-sensitive wording flagged.", category: "Documentation", requirements: requirementPresets.document },
-      { id: "process-notes", label: "Create process notes", description: "Turn workflows into simple process documentation and tickable steps.", category: "Operations", requirements: requirementPresets.process },
-      { id: "banking-client-update", label: "Banking client update", description: "Summarize progress, dependencies, commercial items, and decisions needed.", category: "Communication", requirements: requirementPresets.clientUpdate },
-      ...commonTasks,
-    ],
+    tasks: commonTasks,
   },
   personal: {
     name: "Personal",
@@ -210,11 +280,7 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
   bma: {
     name: "BMA Customer Success",
     context: "Customer success updates, client follow-ups, reports, onboarding material, and issue summaries.",
-    tasks: [
-      { id: "bd-opportunity-note", label: "BD opportunity note", description: "Prepare company research, opportunity fit, risks, and next engagement steps.", category: "Research", requirements: requirementPresets.marketResearch },
-      { id: "customer-success-update", label: "Customer success update", description: "Draft a practical update for client, internal, or delivery stakeholders.", category: "Communication", requirements: requirementPresets.clientUpdate },
-      ...commonTasks,
-    ],
+    tasks: commonTasks,
   },
   thenga: {
     name: "Thenga",
@@ -222,6 +288,140 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
     tasks: commonTasks,
   },
 };
+
+const seedTimestamp = "2026-04-30T00:00:00.000Z";
+const defaultBrand = {
+  brandName: "AI Workbench",
+  primaryColor: "1f3a5f",
+  secondaryColor: "eef3ff",
+  accentColor: "3157ff",
+  logoDataUrl: "",
+  sourceTemplateName: "",
+  sourceTemplateType: "",
+  sourceTemplateDataUrl: "",
+};
+const defaultOutputTemplates: OutputTemplate[] = [
+  {
+    id: "business-document",
+    name: "Business Document",
+    description: "General business document with clear sections and reusable prose.",
+    group: "Document",
+    format: "DOCX",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["draft-document", "create-report", "strategy-vision"],
+    slots: ["Title", "Executive summary", "Background", "Main content", "Recommendations", "Next steps"],
+    style: "Use H1 for the title, H2 for major sections, concise paragraphs, and action-oriented recommendations.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "executive-decision-brief",
+    name: "Executive Decision Brief",
+    description: "Short decision-support format for leadership review.",
+    group: "Brief",
+    format: "DOCX",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["decision-brief"],
+    slots: ["Context", "Problem", "Options", "Recommendation", "Risks", "Decision required"],
+    style: "Keep it executive-ready, direct, and easy to scan. Highlight the recommended option clearly.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "client-update",
+    name: "Client Update",
+    description: "Status update format for clients, sponsors, or internal stakeholders.",
+    group: "Email",
+    format: "Markdown",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["client-update", "draft-email"],
+    slots: ["Subject line", "Overall status", "Progress", "Risks", "Decisions needed", "Next steps"],
+    style: "Write in send-ready language. Use calm, accountable wording and make decisions or asks explicit.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "proposal",
+    name: "Proposal",
+    description: "Proposal-ready structure with value, deliverables, timeline, and metrics.",
+    group: "Proposal",
+    format: "DOCX",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["proposal-copy"],
+    slots: ["Overview", "Client need", "Proposed approach", "Deliverables", "Value / ROI case", "Success metrics", "Timeline"],
+    style: "Use confident, specific language. Avoid filler sales copy and connect deliverables to measurable value.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "presentation-deck",
+    name: "Presentation Deck",
+    description: "Slide-by-slide structure for AI-assisted presentation creation.",
+    group: "Presentation",
+    format: "PPTX",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["presentation-text"],
+    slots: ["Title slide", "Agenda", "Context", "Key message slides", "Recommendation", "Closing action"],
+    style: "Return slide-ready Markdown. For each slide include Slide title, Key message, Bullets, Speaker notes, and Visual direction.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "risk-issue-log",
+    name: "Risk / Issue Log",
+    description: "Trackable risk and issue format with ownership and mitigation.",
+    group: "Checklist",
+    format: "Markdown",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["risk-issue-log"],
+    slots: ["Issue", "Impact", "Likelihood", "Owner", "Mitigation", "Status"],
+    style: "Use a table when there are multiple risks or issues. Make ownership and next action visible.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "rainfin-word-doc",
+    name: "Rainfin Word Doc",
+    description: "Rainfin-branded Word document export for formal reports, proposals, and briefs.",
+    group: "Document",
+    format: "DOCX",
+    ...defaultBrand,
+    brandName: "Rainfin",
+    primaryColor: "17324d",
+    secondaryColor: "eef4f8",
+    accentColor: "2c80b8",
+    scope: "global",
+    compatibleTaskIds: ["draft-document", "create-report", "proposal-copy", "decision-brief"],
+    slots: ["Title", "Executive summary", "Background", "Main content", "Recommendations", "Next steps"],
+    style: "Use a formal consulting-document style with clear headings, concise paragraphs, and executive-ready recommendations.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "supplysync360-powerpoint",
+    name: "SupplySync360 PowerPoint",
+    description: "SupplySync360-branded presentation export for slide-ready AI outputs.",
+    group: "Presentation",
+    format: "PPTX",
+    ...defaultBrand,
+    brandName: "SupplySync360",
+    primaryColor: "0f3f3c",
+    secondaryColor: "e9f6f3",
+    accentColor: "2fbf9b",
+    scope: "global",
+    compatibleTaskIds: ["presentation-text", "strategy-vision", "proposal-copy"],
+    slots: ["Title slide", "Agenda", "Context", "Key message slides", "Recommendation", "Closing action"],
+    style: "Use concise slide language, strong key messages, and practical visual direction for each slide.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+];
 
 const defaultRequirements: Requirements = {
   outputType: "Information summary or business document",
@@ -238,6 +438,7 @@ const outputStorageKey = "ai-workbench-saved-outputs";
 const taskStorageKey = "ai-workbench-work-tasks";
 const reminderStorageKey = "ai-workbench-triggered-reminders";
 const triggeredReminderMetaKey = "triggeredReminderIds";
+const outputTemplateMetaKey = "outputTemplates";
 const taskStatuses: TaskStatus[] = ["Open", "In Progress", "Blocked", "To Do Later", "Closed"];
 const mobileStatusOrder: TaskStatus[] = ["In Progress", "Open", "Blocked", "To Do Later", "Closed"];
 const maxUploadSizeBytes = 8 * 1024 * 1024;
@@ -256,6 +457,8 @@ function App() {
   const [gptPrompt, setGptPrompt] = useState("");
   const [result, setResult] = useState("");
   const [savedOutputs, setSavedOutputs] = useState<SavedOutput[]>([]);
+  const [outputTemplates, setOutputTemplates] = useState<OutputTemplate[]>(defaultOutputTemplates);
+  const [selectedOutputTemplateId, setSelectedOutputTemplateId] = useState(defaultOutputTemplates[0].id);
   const [workTasks, setWorkTasks] = useState<WorkTask[]>([]);
   const [notes, setNotes] = useState<AppNote[]>([]);
   const [activeWorkTaskId, setActiveWorkTaskId] = useState("");
@@ -279,6 +482,9 @@ function App() {
 
   const project = projects[projectId];
   const task = project.tasks.find((item) => item.id === taskId) ?? project.tasks[0];
+  const availableOutputTemplates = outputTemplates.filter((item) => isOutputTemplateAvailable(item, projectId));
+  const selectedOutputTemplate =
+    availableOutputTemplates.find((item) => item.id === selectedOutputTemplateId) ?? availableOutputTemplates[0] ?? defaultOutputTemplates[0];
   const projectHistory = savedOutputs.filter((item) => item.projectId === projectId);
   const activeWorkTask = workTasks.find((item) => item.id === activeWorkTaskId);
   const projectDashboard = buildProjectDashboard(workTasks);
@@ -308,6 +514,12 @@ function App() {
     if (!requirements.sections.trim()) missing.push("List the required sections or structure.");
     return missing;
   }, [assets.length, input, requirements.audience, requirements.outputType, requirements.sections]);
+  const inputQuality = useMemo(() => buildInputQuality(missingDetails, assets), [assets, missingDetails]);
+
+  useEffect(() => {
+    if (availableOutputTemplates.some((item) => item.id === selectedOutputTemplateId)) return;
+    setSelectedOutputTemplateId((availableOutputTemplates[0] ?? defaultOutputTemplates[0]).id);
+  }, [availableOutputTemplates, selectedOutputTemplateId]);
 
   async function refreshData() {
     setSyncing(true);
@@ -328,10 +540,12 @@ function App() {
       }
       const noteResult = await getNotes();
       const triggeredResult = await getMeta<string[]>(triggeredReminderMetaKey, []);
+      const outputTemplateResult = await getMeta<OutputTemplate[]>(outputTemplateMetaKey, defaultOutputTemplates);
 
       setWorkTasks(taskResult.map(normalizeWorkTask));
       setNotes(noteResult.map(normalizeNote));
       setSavedOutputs(outputResult);
+      setOutputTemplates(normalizeOutputTemplates(outputTemplateResult));
       setTriggeredReminderIds(triggeredResult);
       setNow(Date.now());
       setMessage(`Synced ${taskResult.length} tasks, ${noteResult.length} notes, and ${outputResult.length} saved outputs from ${getStorageBackendLabel()}.${outputWarning}`);
@@ -389,7 +603,7 @@ function App() {
     setProjectId(nextProjectId);
     const nextTaskId = projects[nextProjectId].tasks[0].id;
     setTaskId(nextTaskId);
-    setRequirements(taskRequirements(nextProjectId, nextTaskId));
+    setRequirements(requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTaskId), selectedOutputTemplate));
     setGptPrompt("");
     setResult("");
     setMessage("");
@@ -404,13 +618,95 @@ function App() {
   function selectTemplate(nextTaskId: string) {
     setTaskId(nextTaskId);
     const nextTemplate = project.tasks.find((item) => item.id === nextTaskId) ?? project.tasks[0];
-    const nextRequirements = taskRequirements(projectId, nextTaskId);
+    const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(projectId, nextTaskId), selectedOutputTemplate);
     setRequirements(nextRequirements);
     if (activeWorkTask) {
       updateWorkTask(activeWorkTask.id, "templateId", nextTaskId);
       updateWorkTask(activeWorkTask.id, "category", nextTemplate.category);
       updateWorkTask(activeWorkTask.id, "requirements", nextRequirements);
     }
+  }
+
+  function selectOutputTemplate(nextOutputTemplateId: string) {
+    const nextTemplate = outputTemplates.find((item) => item.id === nextOutputTemplateId) ?? defaultOutputTemplates[0];
+    const nextRequirements = requirementsLinkedToOutputTemplate(requirements, nextTemplate);
+    setSelectedOutputTemplateId(nextOutputTemplateId);
+    setRequirements(nextRequirements);
+    if (activeWorkTask) {
+      updateWorkTask(activeWorkTask.id, "outputTemplateId", nextOutputTemplateId);
+      updateWorkTask(activeWorkTask.id, "requirements", nextRequirements);
+    }
+  }
+
+  function saveOutputTemplates(nextTemplates: OutputTemplate[]) {
+    const normalized = normalizeOutputTemplates(nextTemplates);
+    setOutputTemplates(normalized);
+    void setMeta(outputTemplateMetaKey, normalized);
+  }
+
+  function updateSelectedOutputTemplate<K extends keyof OutputTemplate>(key: K, value: OutputTemplate[K]) {
+    const timestamp = new Date().toISOString();
+    const nextTemplate = {
+      ...selectedOutputTemplate,
+      [key]: value,
+      updatedAt: timestamp,
+    };
+    saveOutputTemplates(
+      outputTemplates.map((item) => (item.id === selectedOutputTemplate.id ? nextTemplate : item)),
+    );
+    if (key === "format" || key === "slots") {
+      const nextRequirements = requirementsLinkedToOutputTemplate(requirements, nextTemplate);
+      setRequirements(nextRequirements);
+      if (activeWorkTask) updateWorkTask(activeWorkTask.id, "requirements", nextRequirements);
+    }
+  }
+
+  function duplicateOutputTemplate() {
+    const timestamp = new Date().toISOString();
+    const copy: OutputTemplate = {
+      ...selectedOutputTemplate,
+      id: createId(),
+      name: `${selectedOutputTemplate.name} copy`,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    saveOutputTemplates([copy, ...outputTemplates]);
+    setSelectedOutputTemplateId(copy.id);
+  }
+
+  function deleteOutputTemplate(id: string) {
+    if (outputTemplates.length <= 1) return;
+    const next = outputTemplates.filter((item) => item.id !== id);
+    saveOutputTemplates(next);
+    setSelectedOutputTemplateId((next[0] ?? defaultOutputTemplates[0]).id);
+  }
+
+  function resetOutputTemplates() {
+    saveOutputTemplates(defaultOutputTemplates);
+    setSelectedOutputTemplateId(defaultOutputTemplates[0].id);
+    setMessage("Output templates reset to defaults.");
+  }
+
+  async function uploadTemplateLogo(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setMessage("Choose an image file for the brand logo.");
+      event.target.value = "";
+      return;
+    }
+    updateSelectedOutputTemplate("logoDataUrl", await readAsDataUrl(file));
+    event.target.value = "";
+  }
+
+  async function uploadSourceTemplate(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    updateSelectedOutputTemplate("sourceTemplateName", file.name);
+    updateSelectedOutputTemplate("sourceTemplateType", file.type || file.name.split(".").pop() || "");
+    updateSelectedOutputTemplate("sourceTemplateDataUrl", await readAsDataUrl(file));
+    setMessage(`Stored ${file.name} as a maintained template reference.`);
+    event.target.value = "";
   }
 
   function createWorkTask() {
@@ -476,6 +772,7 @@ function App() {
       id: createId(),
       projectId: taskProjectId,
       templateId,
+      outputTemplateId: selectedOutputTemplate.id,
       title,
       details,
       category,
@@ -487,7 +784,7 @@ function App() {
       checklist,
       input: "",
       assets: [],
-      requirements: taskRequirements(taskProjectId, templateId),
+      requirements: requirementsLinkedToOutputTemplate(taskRequirements(taskProjectId, templateId), selectedOutputTemplate),
       gptPrompt: "",
       result: "",
       createdAt: new Date().toISOString(),
@@ -542,6 +839,7 @@ function App() {
     );
     if (key === "projectId") setProjectId(value as ProjectId);
     if (key === "templateId") setTaskId(value as string);
+    if (key === "outputTemplateId") setSelectedOutputTemplateId(value as string);
     if (key === "reminderAt") forgetTriggeredReminder(id);
   }
 
@@ -555,9 +853,12 @@ function App() {
     setActiveWorkTaskId(normalized.id);
     setProjectId(normalized.projectId);
     setTaskId(normalized.templateId);
+    const nextOutputTemplateId = normalized.outputTemplateId ?? defaultOutputTemplates[0].id;
+    const nextOutputTemplate = outputTemplates.find((item) => item.id === nextOutputTemplateId) ?? defaultOutputTemplates[0];
+    setSelectedOutputTemplateId(nextOutputTemplateId);
     setInput(normalized.input);
     setAssets(normalized.assets);
-    setRequirements(normalized.requirements);
+    setRequirements(requirementsLinkedToOutputTemplate(normalized.requirements, nextOutputTemplate));
     setGptPrompt(normalized.gptPrompt);
     setResult(normalized.result);
     setMessage("Task opened in AI mode.");
@@ -761,14 +1062,17 @@ function App() {
 
         const isDocx = /\.docx$/i.test(file.name);
         const isPptx = /\.pptx$/i.test(file.name);
+        const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
         const canReadText = file.type.startsWith("text/") || /\.(md|txt|csv|json|html)$/i.test(file.name);
         const content = isDocx
           ? await readDocxText(file)
           : isPptx
             ? await readPptxText(file)
+          : isPdf
+            ? await readPdfText(file)
           : canReadText
             ? await file.text()
-            : "This file is attached but cannot be read in the browser. For PDF or scanned files, paste the important text into the input box.";
+            : "This file is attached but cannot be read in the browser. Paste the important text into the input box.";
         const safeContent = content.length > maxTextAssetCharacters
           ? `${content.slice(0, maxTextAssetCharacters)}\n\n[Content truncated at ${maxTextAssetCharacters.toLocaleString()} characters for browser performance.]`
           : content;
@@ -776,7 +1080,7 @@ function App() {
         return {
           id: createId(),
           name: file.name,
-          type: canReadText || isDocx || isPptx ? ("text" as const) : ("file" as const),
+          type: canReadText || isDocx || isPptx || isPdf ? ("text" as const) : ("file" as const),
           content: safeContent,
         };
       }),
@@ -797,7 +1101,19 @@ function App() {
       return;
     }
 
-    const prompt = buildFullLlmPrompt(project.name, project.context, task.label, activeWorkTask?.checklist ?? [], input, assets, requirements);
+    const prompt = buildFullLlmPrompt(
+      project.name,
+      project.context,
+      task.label,
+      activeWorkTask?.title ?? task.label,
+      activeWorkTask?.details ?? "",
+      activeWorkTask?.checklist ?? [],
+      input,
+      assets,
+      requirements,
+      selectedOutputTemplate,
+      inputQuality,
+    );
     setGptPrompt(prompt);
     updateActiveWorkTask("gptPrompt", prompt);
     updateActiveWorkTask("input", input);
@@ -818,13 +1134,21 @@ function App() {
     setMessage("Copied result to clipboard.");
   }
 
-  async function downloadResult(format: Format) {
-    const extension = format === "Markdown" ? "md" : format === "TXT" ? "txt" : "docx";
-    const blob = format === "DOCX" ? await toDocxBlob(result) : new Blob([result], { type: "text/plain;charset=utf-8" });
+  async function downloadResult(format: OutputTemplateFormat) {
+    const extension = format === "Markdown" ? "md" : format.toLowerCase();
+    const templatedResult = applyOutputTemplate(result, selectedOutputTemplate);
+    const blob =
+      format === "DOCX"
+        ? await toDocxBlob(templatedResult, selectedOutputTemplate)
+        : format === "PDF"
+          ? await toPdfBlob(templatedResult, selectedOutputTemplate)
+        : format === "PPTX"
+          ? await toPptxBlob(templatedResult, selectedOutputTemplate)
+        : new Blob([templatedResult], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${project.name}-${task.label}`.replace(/[^a-z0-9]+/gi, "-").toLowerCase() + `.${extension}`;
+    anchor.download = `${project.name}-${task.label}-${selectedOutputTemplate.name}`.replace(/[^a-z0-9]+/gi, "-").toLowerCase() + `.${extension}`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -836,11 +1160,13 @@ function App() {
       projectId,
       workTaskId: activeWorkTaskId,
       taskId: task.id,
+      outputTemplateId: selectedOutputTemplate.id,
       title: `${activeWorkTask?.title ?? task.label} - ${new Date().toLocaleString()}`,
       createdAt: new Date().toISOString(),
       input,
       requirements,
       result,
+      renderedOutput: applyOutputTemplate(result, selectedOutputTemplate),
     };
     setSavedOutputs((current) => [saved, ...current]);
     void saveOutput(saved);
@@ -848,11 +1174,14 @@ function App() {
   }
 
   function loadSaved(saved: SavedOutput) {
-    setTaskId(saved.taskId);
+    setTaskId(legacyTemplateMap[saved.taskId] ?? saved.taskId);
+    const nextOutputTemplateId = saved.outputTemplateId ?? defaultOutputTemplates[0].id;
+    const nextOutputTemplate = outputTemplates.find((item) => item.id === nextOutputTemplateId) ?? defaultOutputTemplates[0];
+    setSelectedOutputTemplateId(nextOutputTemplateId);
     const savedTask = workTasks.find((item) => item.id === saved.workTaskId);
     if (savedTask) openWorkTask(savedTask);
     setInput(saved.input);
-    setRequirements(saved.requirements);
+    setRequirements(requirementsLinkedToOutputTemplate(saved.requirements, nextOutputTemplate));
     setGptPrompt("");
     setResult(saved.result);
     setMessage("Loaded saved output.");
@@ -1658,6 +1987,144 @@ function App() {
             </div>
           </details>
 
+          <details className="panel template-drawer">
+            <summary>
+              <span>
+                <Clipboard size={18} />
+                Output templates
+              </span>
+              <small>{selectedOutputTemplate.name}</small>
+            </summary>
+            <div className="output-template-editor">
+              <label>
+                Template
+                <select value={selectedOutputTemplate.id} onChange={(event) => selectOutputTemplate(event.target.value)}>
+                  {availableOutputTemplates.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.group})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Name
+                <input value={selectedOutputTemplate.name} onChange={(event) => updateSelectedOutputTemplate("name", event.target.value)} />
+              </label>
+              <label>
+                Description
+                <textarea className="small-textarea" value={selectedOutputTemplate.description} onChange={(event) => updateSelectedOutputTemplate("description", event.target.value)} />
+              </label>
+              <div className="form-grid compact-grid">
+                <label>
+                  Group
+                  <input value={selectedOutputTemplate.group} onChange={(event) => updateSelectedOutputTemplate("group", event.target.value)} />
+                </label>
+                <label>
+                  Format
+                  <select value={selectedOutputTemplate.format} onChange={(event) => updateSelectedOutputTemplate("format", event.target.value as OutputTemplateFormat)}>
+                    <option>Markdown</option>
+                    <option>TXT</option>
+                    <option>DOCX</option>
+                    <option>PDF</option>
+                    <option>PPTX</option>
+                  </select>
+                </label>
+              </div>
+              <div className="form-grid compact-grid">
+                <label>
+                  Brand name
+                  <input value={selectedOutputTemplate.brandName} onChange={(event) => updateSelectedOutputTemplate("brandName", event.target.value)} />
+                </label>
+                <label>
+                  Primary color
+                  <input type="color" value={`#${selectedOutputTemplate.primaryColor}`} onChange={(event) => updateSelectedOutputTemplate("primaryColor", event.target.value.replace("#", ""))} />
+                </label>
+                <label>
+                  Secondary color
+                  <input type="color" value={`#${selectedOutputTemplate.secondaryColor}`} onChange={(event) => updateSelectedOutputTemplate("secondaryColor", event.target.value.replace("#", ""))} />
+                </label>
+                <label>
+                  Accent color
+                  <input type="color" value={`#${selectedOutputTemplate.accentColor}`} onChange={(event) => updateSelectedOutputTemplate("accentColor", event.target.value.replace("#", ""))} />
+                </label>
+              </div>
+              <label className="upload-control compact-upload">
+                <Upload size={15} />
+                Upload logo
+                <input accept="image/*" onChange={(event) => void uploadTemplateLogo(event)} type="file" />
+              </label>
+              <label className="upload-control compact-upload">
+                <Upload size={15} />
+                Upload maintained template source
+                <input accept=".docx,.pptx,.pdf,.potx,.dotx" onChange={(event) => void uploadSourceTemplate(event)} type="file" />
+              </label>
+              {(selectedOutputTemplate.logoDataUrl || selectedOutputTemplate.sourceTemplateName) && (
+                <div className="template-source-summary">
+                  {selectedOutputTemplate.logoDataUrl && <span>Logo attached</span>}
+                  {selectedOutputTemplate.sourceTemplateName && <span>Source: {selectedOutputTemplate.sourceTemplateName}</span>}
+                </div>
+              )}
+              <label>
+                Scope
+                <select
+                  value={selectedOutputTemplate.scope === "global" ? "global" : "project"}
+                  onChange={(event) => updateSelectedOutputTemplate("scope", event.target.value === "global" ? "global" : [projectId])}
+                >
+                  <option value="global">Global</option>
+                  <option value="project">Current project only</option>
+                </select>
+              </label>
+              <label>
+                Compatible task IDs
+                <input
+                  value={selectedOutputTemplate.compatibleTaskIds.join(", ")}
+                  onChange={(event) =>
+                    updateSelectedOutputTemplate(
+                      "compatibleTaskIds",
+                      event.target.value
+                        .split(",")
+                        .map((item) => item.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Slots
+                <textarea
+                  className="small-textarea"
+                  value={selectedOutputTemplate.slots.join("\n")}
+                  onChange={(event) =>
+                    updateSelectedOutputTemplate(
+                      "slots",
+                      event.target.value
+                        .split("\n")
+                        .map((item) => item.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Style rules
+                <textarea className="small-textarea" value={selectedOutputTemplate.style} onChange={(event) => updateSelectedOutputTemplate("style", event.target.value)} />
+              </label>
+              <div className="template-actions">
+                <button className="ghost-button" onClick={duplicateOutputTemplate} type="button">
+                  <Plus size={15} />
+                  Duplicate
+                </button>
+                <button className="ghost-button" onClick={resetOutputTemplates} type="button">
+                  Reset defaults
+                </button>
+                <button className="danger-button" disabled={outputTemplates.length <= 1} onClick={() => deleteOutputTemplate(selectedOutputTemplate.id)} type="button">
+                  <Trash2 size={15} />
+                  Delete
+                </button>
+              </div>
+            </div>
+          </details>
+
           <section className="panel history-panel">
             <h2>
               <History size={18} />
@@ -1696,6 +2163,16 @@ function App() {
                     ))}
                   </select>
                 </label>
+                <label>
+                  Output
+                  <select value={selectedOutputTemplate.id} onChange={(event) => selectOutputTemplate(event.target.value)}>
+                    {availableOutputTemplates.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button className="primary-button" onClick={createWorkTask} type="button">
                   <ListTodo size={16} />
                   New task
@@ -1711,6 +2188,7 @@ function App() {
                     <span>
                       <strong>{item.title}</strong>
                       <small>{item.category} - {item.priority} - {item.status}</small>
+                      <small>{taskInputQualityStatus(item)}</small>
                     </span>
                     <small>{taskDateLabel(item)}</small>
                   </button>
@@ -1748,7 +2226,7 @@ function App() {
                 onReminderSave={saveReminder}
                 reminderValue={reminderValue(activeWorkTask)}
                 onTemplateChange={(nextProjectId, nextTemplateId) => {
-                  const nextRequirements = taskRequirements(nextProjectId, nextTemplateId);
+                  const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTemplateId), selectedOutputTemplate);
                   const nextTemplate = projects[nextProjectId].tasks.find((item) => item.id === nextTemplateId) ?? projects[nextProjectId].tasks[0];
                   setTaskId(nextTemplateId);
                   setRequirements(nextRequirements);
@@ -1860,7 +2338,7 @@ function App() {
                 />
                 <label className="upload-control">
                   <Upload size={17} />
-                  Upload documents, presentations, or images
+                  Upload PDF, DOCX, PPTX, text, or images
                   <input multiple onChange={handleFiles} type="file" />
                 </label>
                 {assets.length > 0 && (
@@ -1890,19 +2368,24 @@ function App() {
               <section className="panel">
                 <h2>
                   <Check size={18} />
-                  Output requirements
+                  Content brief
                 </h2>
+                <p className="context-copy">
+                  The task template defines the content intent. The selected output template controls format, slots, and export structure.
+                </p>
                 <div className="form-grid">
                   <label>
-                    Output type
+                    Content goal
                     <input value={requirements.outputType} onChange={(event) => updateRequirement("outputType", event.target.value)} />
                   </label>
                   <label>
-                    File format
-                    <select value={requirements.format} onChange={(event) => updateRequirement("format", event.target.value as Format)}>
-                      <option>Markdown</option>
-                      <option>TXT</option>
-                      <option>DOCX</option>
+                    Output template
+                    <select value={selectedOutputTemplate.id} onChange={(event) => selectOutputTemplate(event.target.value)}>
+                      {availableOutputTemplates.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label>
@@ -1921,10 +2404,18 @@ function App() {
                       <option>Detailed</option>
                     </select>
                   </label>
-                  <label>
-                    Required sections
-                    <input value={requirements.sections} onChange={(event) => updateRequirement("sections", event.target.value)} />
-                  </label>
+                  <div className="linked-template-field">
+                    <span>Template format</span>
+                    <strong>{selectedOutputTemplate.format}</strong>
+                  </div>
+                  <div className="linked-template-field">
+                    <span>Template group</span>
+                    <strong>{selectedOutputTemplate.group}</strong>
+                  </div>
+                </div>
+                <div className="linked-template-slots">
+                  <span>Template slots</span>
+                  <p>{selectedOutputTemplate.slots.join(", ")}</p>
                 </div>
                 <label>
                   Constraints
@@ -1934,6 +2425,31 @@ function App() {
                   Image requirements
                   <textarea className="small-textarea" value={requirements.imageRequirements} onChange={(event) => updateRequirement("imageRequirements", event.target.value)} />
                 </label>
+              </section>
+
+              <section className={`panel quality-panel ${inputQuality.status === "Ready" ? "ready" : "needs-detail"}`}>
+                <h2>
+                  <Check size={18} />
+                  Input quality
+                </h2>
+                <div className="quality-status">
+                  <strong>{inputQuality.status}</strong>
+                  <span>{selectedOutputTemplate.name} - {selectedOutputTemplate.format}</span>
+                </div>
+                {inputQuality.checks.length > 0 && (
+                  <ul>
+                    {inputQuality.checks.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                )}
+                {inputQuality.warnings.length > 0 && (
+                  <ul>
+                    {inputQuality.warnings.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                )}
               </section>
 
               <section className="panel result-panel">
@@ -1978,9 +2494,17 @@ function App() {
                     <Clipboard size={16} />
                     Copy output
                   </button>
-                  <button disabled={!result} onClick={() => void downloadResult(requirements.format)} type="button">
+                  <button disabled={!result} onClick={() => void downloadResult("DOCX")} type="button">
                     <Download size={16} />
-                    Download {requirements.format}
+                    DOCX
+                  </button>
+                  <button disabled={!result} onClick={() => void downloadResult("PDF")} type="button">
+                    <Download size={16} />
+                    PDF
+                  </button>
+                  <button disabled={!result} onClick={() => void downloadResult("PPTX")} type="button">
+                    <Download size={16} />
+                    PPTX
                   </button>
                   <button disabled={!result} onClick={saveResult} type="button">
                     <Save size={16} />
@@ -2194,16 +2718,135 @@ function MobileStatusSection({
   );
 }
 
+type InputQuality = {
+  status: "Ready" | "Needs detail";
+  checks: string[];
+  warnings: string[];
+};
+
+function buildInputQuality(missingDetails: string[], assets: InputAsset[]): InputQuality {
+  const warnings: string[] = [];
+  const checks: string[] = [];
+  const imageAssets = assets.filter((asset) => asset.type === "image");
+  const unreadableAssets = assets.filter((asset) => asset.type === "file");
+  const truncatedAssets = assets.filter((asset) => asset.content.includes("[Content truncated at"));
+  const readableAssets = assets.filter((asset) => asset.type === "text");
+
+  if (readableAssets.length) checks.push(`${readableAssets.length} readable document${readableAssets.length === 1 ? "" : "s"} included in the prompt.`);
+  if (imageAssets.length) warnings.push("Images are only listed by filename. Upload them directly to ChatGPT or describe the important content.");
+  if (unreadableAssets.length) warnings.push("Some attached files cannot be read in the browser. Paste the important text into the input box.");
+  if (readableAssets.some((asset) => asset.content.includes("no selectable text was found"))) {
+    warnings.push("At least one PDF had no selectable text. For scanned PDFs, paste the important text manually.");
+  }
+  if (truncatedAssets.length) warnings.push("Some extracted source text was truncated for browser performance. Paste any missing critical content manually.");
+  missingDetails.forEach((item) => warnings.push(item));
+
+  if (!warnings.length) checks.push("Prompt has enough source material and output requirements to generate directly.");
+
+  return {
+    status: warnings.length ? "Needs detail" : "Ready",
+    checks,
+    warnings,
+  };
+}
+
+function missingDetailsForTask(task: WorkTask) {
+  const missing: string[] = [];
+  if (task.input.trim().length < 20 && task.assets.length === 0) missing.push("Add source input, notes, or a readable file.");
+  if (!task.requirements.outputType.trim()) missing.push("Choose the output type you need.");
+  if (!task.requirements.audience.trim()) missing.push("Describe who the output is for.");
+  if (!task.requirements.sections.trim()) missing.push("List the required sections or structure.");
+  return missing;
+}
+
+function taskInputQualityStatus(task: WorkTask) {
+  return `AI input: ${buildInputQuality(missingDetailsForTask(task), task.assets).status.toLowerCase()}`;
+}
+
+function isOutputTemplateAvailable(template: OutputTemplate, projectId: ProjectId) {
+  return template.scope === "global" || template.scope.includes(projectId);
+}
+
+function normalizeOutputTemplates(templates: OutputTemplate[]) {
+  const timestamp = new Date().toISOString();
+  const normalized = templates
+    .filter((template) => template?.id && template.name)
+    .map((template) => ({
+      ...template,
+      description: template.description ?? "",
+      group: template.group || "Document",
+      format: normalizeOutputTemplateFormat(template.format),
+      brandName: template.brandName || template.name || defaultBrand.brandName,
+      primaryColor: normalizeHexColor(template.primaryColor, defaultBrand.primaryColor),
+      secondaryColor: normalizeHexColor(template.secondaryColor, defaultBrand.secondaryColor),
+      accentColor: normalizeHexColor(template.accentColor, defaultBrand.accentColor),
+      logoDataUrl: template.logoDataUrl ?? "",
+      sourceTemplateName: template.sourceTemplateName ?? "",
+      sourceTemplateType: template.sourceTemplateType ?? "",
+      sourceTemplateDataUrl: template.sourceTemplateDataUrl ?? "",
+      scope: normalizeOutputTemplateScope(template.scope),
+      compatibleTaskIds: Array.isArray(template.compatibleTaskIds) ? template.compatibleTaskIds : [],
+      slots: Array.isArray(template.slots) && template.slots.length ? template.slots : ["Title", "Main content", "Next steps"],
+      style: template.style ?? "",
+      createdAt: template.createdAt || timestamp,
+      updatedAt: template.updatedAt || template.createdAt || timestamp,
+    }));
+
+  return normalized.length ? normalized : defaultOutputTemplates;
+}
+
+function normalizeHexColor(value: string | undefined, fallback: string) {
+  const cleaned = (value ?? "").replace("#", "").trim();
+  return /^[0-9a-f]{6}$/i.test(cleaned) ? cleaned : fallback;
+}
+
+function normalizeOutputTemplateFormat(format: OutputTemplate["format"]): OutputTemplateFormat {
+  return format === "TXT" || format === "DOCX" || format === "PDF" || format === "PPTX" ? format : "Markdown";
+}
+
+function normalizeOutputTemplateScope(scope: OutputTemplate["scope"]): OutputTemplate["scope"] {
+  if (scope === "global") return "global";
+  if (!Array.isArray(scope)) return "global";
+  return scope.filter((item): item is ProjectId => Boolean(projects[item]));
+}
+
+function applyOutputTemplate(output: string, template: OutputTemplate) {
+  const trimmed = output.trim();
+  if (!trimmed) return "";
+
+  const slotGuide = template.slots.map((slot) => `- ${slot}`).join("\n");
+  return [
+    `# ${template.name}`,
+    "",
+    `Format target: ${template.format}`,
+    template.description ? `Template purpose: ${template.description}` : "",
+    template.style ? `Style rules: ${template.style}` : "",
+    "",
+    "## Template Slots",
+    slotGuide,
+    "",
+    "## Content",
+    trimmed,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function normalizeWorkTask(task: WorkTask): WorkTask {
   const fallbackProjectId = task.projectId && projects[task.projectId] ? task.projectId : "avbob";
-  const fallbackTemplateId = projects[fallbackProjectId].tasks.some((template) => template.id === task.templateId)
-    ? task.templateId
+  const migratedTemplateId = legacyTemplateMap[task.templateId] ?? task.templateId;
+  const fallbackTemplateId = projects[fallbackProjectId].tasks.some((template) => template.id === migratedTemplateId)
+    ? migratedTemplateId
     : projects[fallbackProjectId].tasks[0].id;
+  const fallbackOutputTemplateId = task.outputTemplateId || defaultOutputTemplates[0].id;
+  const fallbackOutputTemplate = defaultOutputTemplates.find((template) => template.id === fallbackOutputTemplateId) ?? defaultOutputTemplates[0];
+  const migratedFromLegacyTemplate = migratedTemplateId !== task.templateId;
 
   return {
     ...task,
     projectId: fallbackProjectId,
     templateId: fallbackTemplateId,
+    outputTemplateId: fallbackOutputTemplateId,
     title: task.title || "Untitled task",
     details: task.details ?? "",
     category: task.category || "General",
@@ -2217,7 +2860,9 @@ function normalizeWorkTask(task: WorkTask): WorkTask {
     checklist: task.checklist?.map((item) => ({ ...item, done: Boolean(item.done) })) ?? [],
     input: task.input ?? "",
     assets: task.assets ?? [],
-    requirements: task.requirements ?? taskRequirements(fallbackProjectId, fallbackTemplateId),
+    requirements: migratedFromLegacyTemplate
+      ? requirementsLinkedToOutputTemplate(taskRequirements(fallbackProjectId, fallbackTemplateId), fallbackOutputTemplate)
+      : requirementsLinkedToOutputTemplate(task.requirements ?? taskRequirements(fallbackProjectId, fallbackTemplateId), fallbackOutputTemplate),
     gptPrompt: task.gptPrompt ?? "",
     result: task.result ?? "",
     createdAt: task.createdAt || new Date().toISOString(),
@@ -2286,6 +2931,14 @@ async function notifyReminder(task: WorkTask) {
 function taskRequirements(projectId: ProjectId, templateId: string): Requirements {
   const template = projects[projectId].tasks.find((item) => item.id === templateId);
   return { ...(template?.requirements ?? defaultRequirements) };
+}
+
+function requirementsLinkedToOutputTemplate(requirements: Requirements, outputTemplate: OutputTemplate): Requirements {
+  return {
+    ...requirements,
+    format: outputTemplate.format === "PPTX" || outputTemplate.format === "PDF" ? "Markdown" : outputTemplate.format,
+    sections: outputTemplate.slots.join(", "),
+  };
 }
 
 function priorityRank(priority: Priority) {
@@ -2491,6 +3144,30 @@ async function readPptxText(file: File) {
   return extracted || "The PPTX file was read, but no slide text or speaker notes were found.";
 }
 
+async function readPdfText(file: File) {
+  const pdfjs = await import("pdfjs-dist");
+  const workerUrl = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+
+  const document = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages: string[] = [];
+
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items
+      .map((item) => ("str" in item ? item.str : ""))
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (pageText) pages.push(`Page ${pageNumber}\n${pageText}`);
+  }
+
+  const extracted = pages.join("\n\n").trim();
+  return extracted || "The PDF file was read, but no selectable text was found. If it is scanned or image-only, paste the important text into the input box.";
+}
+
 function comparePptxPartNames(left: string, right: string) {
   return pptxPartNumber(left) - pptxPartNumber(right);
 }
@@ -2534,33 +3211,72 @@ function buildFullLlmPrompt(
   projectName: string,
   projectContext: string,
   taskLabel: string,
+  taskTitle: string,
+  taskDetails: string,
   checklist: ChecklistItem[],
   input: string,
   assets: InputAsset[],
   requirements: Requirements,
+  outputTemplate: OutputTemplate,
+  inputQuality: InputQuality,
 ) {
   const readableFiles = assets.filter((asset) => asset.type === "text");
   const imageFiles = assets.filter((asset) => asset.type === "image");
   const unreadableFiles = assets.filter((asset) => asset.type === "file");
+  const sourceLimitations = [
+    imageFiles.length ? "Image attachments are listed by filename only. Use them only if the user also provides visual details in the typed input." : "",
+    unreadableFiles.length ? "Some attachments cannot be read in this browser workflow. Do not invent their contents." : "",
+    readableFiles.some((asset) => asset.content.includes("no selectable text was found"))
+      ? "At least one PDF had no selectable text, which usually means it is scanned or image-only. Do not invent its contents."
+      : "",
+    assets.some((asset) => asset.content.includes("[Content truncated at")) ? "Some source text was truncated. Flag any important gaps before relying on missing material." : "",
+  ].filter(Boolean);
 
   return [
     "You are a practical AI work assistant. Process the full source material and create a new output document.",
     "I am using ChatGPT Plus manually, so produce the final answer directly in this chat.",
     "",
+    "INTENT BRIEF",
+    `Objective: Create ${requirements.outputType} for "${taskTitle}".`,
+    `Desired outcome: A usable final output that can be pasted into the selected output template or exported with minimal editing.`,
+    `Audience: ${requirements.audience}`,
+    `Success criteria: Follow the required sections, use the selected output template slots, respect the tone and constraints, and clearly distinguish facts from assumptions where relevant.`,
+    `Source material included: Typed input${readableFiles.length ? `, ${readableFiles.length} readable file(s)` : ""}${checklist.length ? ", task checklist" : ""}.`,
+    `Source limitations: ${sourceLimitations.length ? sourceLimitations.join(" ") : "No major source limitations detected."}`,
+    "Assumptions policy: State important assumptions explicitly. Do not invent missing facts, figures, dates, commitments, or document contents.",
+    `Output structure: Use the task sections and map the content into the output template slots named below.`,
+    `Formatting/export target: ${outputTemplate.format}${outputTemplate.format === "PPTX" ? " (return PPTX-ready Markdown; the app does not generate PowerPoint files yet)" : ""}.`,
+    "",
     "PROJECT",
     `Name: ${projectName}`,
     `Context: ${projectContext}`,
     `Task template: ${taskLabel}`,
+    `Task title: ${taskTitle}`,
+    `Task details: ${taskDetails.trim() || "No task details provided."}`,
     "",
-    "OUTPUT REQUIREMENTS",
-    `Output type: ${requirements.outputType}`,
-    `Format: ${requirements.format}`,
+    "CONTENT BRIEF",
+    `Content goal: ${requirements.outputType}`,
+    `Linked export format: ${outputTemplate.format}`,
     `Tone: ${requirements.tone}`,
     `Audience: ${requirements.audience}`,
     `Length: ${requirements.length}`,
-    `Required sections: ${requirements.sections}`,
+    `Required template slots: ${requirements.sections}`,
     `Constraints: ${requirements.constraints || "None"}`,
     `Image requirements: ${requirements.imageRequirements || "None"}`,
+    "",
+    "OUTPUT TEMPLATE",
+    `Name: ${outputTemplate.name}`,
+    `Description: ${outputTemplate.description || "None"}`,
+    `Group: ${outputTemplate.group}`,
+    `Preferred format: ${outputTemplate.format}`,
+    `Compatible task IDs: ${outputTemplate.compatibleTaskIds.length ? outputTemplate.compatibleTaskIds.join(", ") : "Any"}`,
+    `Slots: ${outputTemplate.slots.join(", ")}`,
+    `Style rules: ${outputTemplate.style || "None"}`,
+    "",
+    "INPUT QUALITY CHECK",
+    `Status: ${inputQuality.status}`,
+    inputQuality.checks.length ? `Checks: ${inputQuality.checks.join(" ")}` : "Checks: None",
+    inputQuality.warnings.length ? `Warnings: ${inputQuality.warnings.join(" ")}` : "Warnings: None",
     "",
     "SOURCE INPUT",
     input.trim() || "No typed input provided.",
@@ -2581,6 +3297,9 @@ function buildFullLlmPrompt(
     "",
     "INSTRUCTIONS",
     "Create the requested output as a new, business-ready document, summary, or email draft according to the selected output type.",
+    "Map the answer to the output template slots. Use clear Markdown headings that match the selected template where possible.",
+    "If the selected output template is Presentation Deck, return slide-by-slide Markdown. Each slide must include Slide title, Key message, Bullets, Speaker notes, and Visual direction.",
+    "If the selected output template is AI prompt generator, return a clean reusable prompt block with no surrounding commentary.",
     "If the requested output is an email, include a usable subject line and email body.",
     "If the requested output is a summary, distinguish confirmed information, assumptions, risks, gaps, and action items.",
     "If the task checklist contains open items, include them as action items or a tickable checklist when relevant.",
@@ -2588,29 +3307,234 @@ function buildFullLlmPrompt(
   ].join("\n");
 }
 
-async function toDocxBlob(markdown: string) {
+type MarkdownBlock = {
+  type: "heading" | "bullet" | "numbered" | "paragraph";
+  level: number;
+  text: string;
+};
+
+function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
+  return markdown
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return { type: "paragraph" as const, level: 0, text: "" };
+      const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
+      if (headingMatch) return { type: "heading" as const, level: headingMatch[1].length, text: headingMatch[2] };
+      if (/^[-*]\s+/.test(trimmed)) return { type: "bullet" as const, level: 0, text: trimmed.replace(/^[-*]\s+/, "") };
+      if (/^\d+\.\s+/.test(trimmed)) return { type: "numbered" as const, level: 0, text: trimmed.replace(/^\d+\.\s+/, "") };
+      return { type: "paragraph" as const, level: 0, text: trimmed.replace(/^\*\*([^*]+):\*\*\s*/, "$1: ") };
+    });
+}
+
+function dataUrlToUint8Array(dataUrl: string) {
+  const base64 = dataUrl.split(",")[1] ?? "";
+  const binary = atob(base64);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function brandedTitle(template: OutputTemplate) {
+  return template.brandName || template.name;
+}
+
+async function toDocxBlob(markdown: string, template: OutputTemplate) {
+  const blocks = parseMarkdownBlocks(markdown);
   const children = markdown.split("\n").map((line) => {
     const trimmed = line.trim();
-    const isHeading = trimmed.startsWith("#");
-    const text = trimmed.replace(/^#+\s*/, "").replace(/^\*\*([^*]+):\*\*\s*/, "$1: ");
+    const headingMatch = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    const isBullet = /^[-*]\s+/.test(trimmed);
+    const isNumbered = /^\d+\.\s+/.test(trimmed);
+    const text = trimmed
+      .replace(/^#{1,6}\s*/, "")
+      .replace(/^[-*]\s+/, "")
+      .replace(/^\d+\.\s+/, "")
+      .replace(/^\*\*([^*]+):\*\*\s*/, "$1: ");
+
+    if (!trimmed) {
+      return new Paragraph({ spacing: { after: 80 } });
+    }
 
     return new Paragraph({
-      spacing: { after: isHeading ? 180 : 90 },
+      heading: headingMatch?.[1].length === 1 ? HeadingLevel.HEADING_1 : headingMatch?.[1].length === 2 ? HeadingLevel.HEADING_2 : headingMatch ? HeadingLevel.HEADING_3 : undefined,
+      bullet: isBullet ? { level: 0 } : undefined,
+      numbering: isNumbered ? { reference: "ordered-list", level: 0 } : undefined,
+      spacing: { after: headingMatch ? 180 : 90 },
       children: [
         new TextRun({
           text,
-          bold: isHeading || /^\w[\w\s]+:/.test(text),
-          size: isHeading ? 30 : 22,
+          bold: Boolean(headingMatch) || /^\w[\w\s]+:/.test(text),
+          size: headingMatch ? 30 : 22,
         }),
       ],
     });
   });
+  const headerChildren = [
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [
+        new TextRun({
+          text: brandedTitle(template),
+          bold: true,
+          color: template.primaryColor,
+        }),
+      ],
+    }),
+  ];
 
   const document = new Document({
-    sections: [{ children }],
+    numbering: {
+      config: [
+        {
+          reference: "ordered-list",
+          levels: [
+            {
+              level: 0,
+              format: "decimal",
+              text: "%1.",
+              alignment: "left",
+            },
+          ],
+        },
+      ],
+    },
+    sections: [
+      {
+        headers: { default: new Header({ children: headerChildren }) },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: brandedTitle(template), color: template.primaryColor, size: 18 })],
+              }),
+            ],
+          }),
+        },
+        children,
+      },
+    ],
   });
 
   return Packer.toBlob(document);
+}
+
+async function toPdfBlob(markdown: string, template: OutputTemplate) {
+  const { jsPDF } = await import("jspdf");
+  const pdf = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 48;
+  let y = 56;
+
+  pdf.setFillColor(`#${template.primaryColor}`);
+  pdf.rect(0, 0, pageWidth, 14, "F");
+  if (template.logoDataUrl) {
+    pdf.addImage(template.logoDataUrl, "PNG", pageWidth - 138, 26, 90, 34);
+  } else {
+    pdf.setTextColor(`#${template.primaryColor}`);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(12);
+    pdf.text(brandedTitle(template), pageWidth - margin, 36, { align: "right" });
+  }
+
+  for (const block of parseMarkdownBlocks(markdown)) {
+    if (!block.text) {
+      y += 8;
+      continue;
+    }
+    const isHeading = block.type === "heading";
+    const fontSize = isHeading ? (block.level === 1 ? 18 : 14) : 10.5;
+    const lineHeight = isHeading ? fontSize + 8 : fontSize + 5;
+    pdf.setFont("helvetica", isHeading ? "bold" : "normal");
+    pdf.setFontSize(fontSize);
+    pdf.setTextColor(isHeading ? `#${template.primaryColor}` : "#171827");
+    const prefix = block.type === "bullet" ? "- " : "";
+    const lines = pdf.splitTextToSize(`${prefix}${block.text}`, pageWidth - margin * 2);
+
+    if (y + lines.length * lineHeight > pageHeight - 54) {
+      pdf.addPage();
+      pdf.setFillColor(`#${template.primaryColor}`);
+      pdf.rect(0, 0, pageWidth, 14, "F");
+      y = 48;
+    }
+
+    pdf.text(lines, margin, y);
+    y += lines.length * lineHeight + (isHeading ? 6 : 2);
+  }
+
+  const pageCount = pdf.getNumberOfPages();
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    pdf.setPage(pageNumber);
+    pdf.setFontSize(8);
+    pdf.setTextColor("#627168");
+    pdf.text(`${brandedTitle(template)} | ${pageNumber}`, pageWidth - margin, pageHeight - 24, { align: "right" });
+  }
+
+  return pdf.output("blob");
+}
+
+async function toPptxBlob(markdown: string, template: OutputTemplate) {
+  const { default: PptxGenJS } = await import("pptxgenjs");
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+  pptx.author = brandedTitle(template);
+  pptx.subject = template.name;
+  pptx.theme = {
+    headFontFace: "Aptos Display",
+    bodyFontFace: "Aptos",
+  };
+
+  const slides = splitMarkdownIntoSlides(markdown);
+  slides.forEach((slideContent, index) => {
+    const slide = pptx.addSlide();
+    slide.background = { color: "FFFFFF" };
+    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 0.12, fill: { color: template.primaryColor }, line: { color: template.primaryColor } });
+    if (template.logoDataUrl) {
+      slide.addImage({ data: template.logoDataUrl, x: 11.2, y: 0.25, w: 1.55, h: 0.55 });
+    } else {
+      slide.addText(brandedTitle(template), { x: 10.25, y: 0.3, w: 2.5, h: 0.25, fontSize: 8, bold: true, color: template.primaryColor, align: "right" });
+    }
+
+    const blocks = parseMarkdownBlocks(slideContent).filter((block) => block.text);
+    const title = blocks.find((block) => block.type === "heading")?.text ?? (index === 0 ? template.name : `Slide ${index + 1}`);
+    const body = blocks.filter((block) => block.text !== title).slice(0, 8);
+    slide.addText(title, { x: 0.65, y: 0.65, w: 11.2, h: 0.55, fontSize: 28, bold: true, color: template.primaryColor, margin: 0 });
+    slide.addShape(pptx.ShapeType.line, { x: 0.65, y: 1.28, w: 2.2, h: 0, line: { color: template.accentColor, width: 2 } });
+
+    const bulletLines = body.map((block) => ({
+      text: block.text,
+      options: { bullet: block.type !== "paragraph" ? { type: "bullet" as const } : undefined },
+    }));
+    slide.addText(bulletLines.length ? bulletLines : [{ text: slideContent.replace(/^#+\s*/gm, "").slice(0, 800), options: {} }], {
+      x: 0.8,
+      y: 1.65,
+      w: 11.65,
+      h: 4.75,
+      fontSize: 15,
+      color: "171827",
+      breakLine: false,
+      fit: "shrink",
+      valign: "top",
+    });
+    slide.addText(`${brandedTitle(template)} | ${index + 1}`, { x: 0.65, y: 7.05, w: 12, h: 0.22, fontSize: 7, color: "627168", align: "right" });
+  });
+
+  return (await pptx.write({ outputType: "blob" })) as Blob;
+}
+
+function splitMarkdownIntoSlides(markdown: string) {
+  const explicitSlides = markdown
+    .split(/\n(?=#{1,3}\s+(?:Slide\s+\d+|Title slide|Agenda|Context|Recommendation|Closing action)\b)/i)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (explicitSlides.length > 1) return explicitSlides;
+
+  const blocks = parseMarkdownBlocks(markdown).filter((block) => block.text);
+  const chunks: string[] = [];
+  for (let index = 0; index < blocks.length; index += 7) {
+    chunks.push(blocks.slice(index, index + 7).map((block) => `${block.type === "heading" ? "#" : "-"} ${block.text}`).join("\n"));
+  }
+  return chunks.length ? chunks : [markdown];
 }
 
 export { App };
