@@ -517,6 +517,11 @@ summary:focus-visible {
   border-color: #f8d28a;
 }
 
+.home-reminder.tomorrow {
+  background: #f3f6ff;
+  border-color: #bdd3ff;
+}
+
 .note-snapshot-list,
 .ai-studio-actions {
   display: grid;
@@ -706,6 +711,12 @@ summary:focus-visible {
   background: var(--status-reminder-bg);
   border-color: #f2c168;
   box-shadow: inset 4px 0 0 var(--status-reminder);
+}
+
+.reminder-row.tomorrow {
+  background: #f3f6ff;
+  border-color: #bdd3ff;
+  box-shadow: inset 4px 0 0 #4f73d9;
 }
 
 .reminder-row.upcoming {

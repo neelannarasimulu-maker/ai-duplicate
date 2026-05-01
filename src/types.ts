@@ -42,6 +42,7 @@ export type OutputTemplate = {
   sourceTemplateName: string;
   sourceTemplateType: string;
   sourceTemplateDataUrl: string;
+  sourceTemplateText: string;
   scope: "global" | ProjectId[];
   compatibleTaskIds: string[];
   slots: string[];

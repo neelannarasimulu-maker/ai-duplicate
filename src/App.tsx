@@ -299,6 +299,7 @@ const defaultBrand = {
   sourceTemplateName: "",
   sourceTemplateType: "",
   sourceTemplateDataUrl: "",
+  sourceTemplateText: "",
 };
 const defaultOutputTemplates: OutputTemplate[] = [
   {
@@ -702,9 +703,11 @@ function App() {
   async function uploadSourceTemplate(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    const templateText = await extractTemplateReferenceText(file);
     updateSelectedOutputTemplate("sourceTemplateName", file.name);
     updateSelectedOutputTemplate("sourceTemplateType", file.type || file.name.split(".").pop() || "");
     updateSelectedOutputTemplate("sourceTemplateDataUrl", await readAsDataUrl(file));
+    updateSelectedOutputTemplate("sourceTemplateText", templateText);
     setMessage(`Stored ${file.name} as a maintained template reference.`);
     event.target.value = "";
   }
@@ -1346,13 +1349,13 @@ function App() {
                 </button>
               </div>
               <div className="reminder-list">
-                {[...reminderPlanner.overdue, ...reminderPlanner.today].slice(0, 5).map((item) => (
+                {[...reminderPlanner.overdue, ...reminderPlanner.today, ...reminderPlanner.tomorrow].slice(0, 5).map((item) => (
                   <button className={`reminder-title home-reminder ${reminderState(item, now)}`} key={item.id} onClick={() => openWorkTask(item)} type="button">
                     <strong>{item.title}</strong>
                     <span>{projects[item.projectId].name} - {reminderLabel(item, now)}</span>
                   </button>
                 ))}
-                {reminderPlanner.overdue.length + reminderPlanner.today.length === 0 && <p className="empty">No reminders due today.</p>}
+                {reminderPlanner.overdue.length + reminderPlanner.today.length + reminderPlanner.tomorrow.length === 0 && <p className="empty">No reminders or due dates due soon.</p>}
               </div>
             </section>
 
@@ -1551,7 +1554,7 @@ function App() {
               </div>
             </div>
             <div className="mobile-task-list">
-              {[...reminderPlanner.overdue, ...reminderPlanner.today].map((item) => (
+              {[...reminderPlanner.overdue, ...reminderPlanner.today, ...reminderPlanner.tomorrow].map((item) => (
                 <article key={item.id} className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
                   <div>
                     <strong>{item.title}</strong>
@@ -1570,8 +1573,8 @@ function App() {
                   </div>
                 </article>
               ))}
-              {reminderPlanner.overdue.length + reminderPlanner.today.length === 0 && (
-                <p className="empty">No overdue or today reminders.</p>
+              {reminderPlanner.overdue.length + reminderPlanner.today.length + reminderPlanner.tomorrow.length === 0 && (
+                <p className="empty">No overdue, today, or tomorrow reminders.</p>
               )}
             </div>
           </section>
@@ -1616,6 +1619,7 @@ function App() {
               <div className="reminder-metrics">
                 <span><strong>{reminderPlanner.overdue.length}</strong> overdue</span>
                 <span><strong>{reminderPlanner.today.length}</strong> today</span>
+                <span><strong>{reminderPlanner.tomorrow.length}</strong> tomorrow</span>
                 <span><strong>{reminderPlanner.upcoming.length}</strong> upcoming</span>
               </div>
               <button
@@ -1661,6 +1665,20 @@ function App() {
                 title="Today"
               />
               <ReminderColumn
+                emptyText="Nothing planned for tomorrow."
+                items={reminderPlanner.tomorrow}
+                now={now}
+                onClear={clearReminder}
+                onOpen={(item) => {
+                  openWorkTask(item);
+                  setViewMode("work");
+                }}
+                onSave={saveReminder}
+                onSchedule={updateReminder}
+                reminderValue={reminderValue}
+                title="Tomorrow"
+              />
+              <ReminderColumn
                 emptyText="No upcoming reminders."
                 items={reminderPlanner.upcoming}
                 now={now}
@@ -1682,10 +1700,10 @@ function App() {
                   <ListTodo size={18} />
                   Planning queue
                 </h2>
-                <span className="subtle-count">{reminderPlanner.unscheduled.length}</span>
+                <span className="subtle-count">{reminderPlanner.planningQueue.length}</span>
               </div>
               <div className="reminder-list">
-                {reminderPlanner.unscheduled.map((item) => (
+                {reminderPlanner.planningQueue.map((item) => (
                   <div className="reminder-row compact" key={item.id}>
                     <button
                       className="reminder-title"
@@ -1714,7 +1732,7 @@ function App() {
                     </label>
                   </div>
                 ))}
-                {reminderPlanner.unscheduled.length === 0 && <p className="empty">Every open task has a reminder, or there are no open tasks.</p>}
+                {reminderPlanner.planningQueue.length === 0 && <p className="empty">Every open task has a reminder or due date, or there are no open tasks.</p>}
               </div>
             </section>
           </section>
@@ -2062,6 +2080,7 @@ function App() {
                 <div className="template-source-summary">
                   {selectedOutputTemplate.logoDataUrl && <span>Logo attached</span>}
                   {selectedOutputTemplate.sourceTemplateName && <span>Source: {selectedOutputTemplate.sourceTemplateName}</span>}
+                  {selectedOutputTemplate.sourceTemplateText && <span>Template text extracted for prompt guidance</span>}
                 </div>
               )}
               <label>
@@ -2480,6 +2499,10 @@ function App() {
                     Paste ChatGPT output
                   </h2>
                 </div>
+                <p className="context-copy">
+                  Export will use {selectedOutputTemplate.name}
+                  {selectedOutputTemplate.sourceTemplateName ? ` with source template ${selectedOutputTemplate.sourceTemplateName}` : ""}. Paste clean ChatGPT content; markdown headings and image placeholders will be converted into formatted output.
+                </p>
                 <textarea
                   className="output-textarea"
                   value={result}
@@ -2784,6 +2807,7 @@ function normalizeOutputTemplates(templates: OutputTemplate[]) {
       sourceTemplateName: template.sourceTemplateName ?? "",
       sourceTemplateType: template.sourceTemplateType ?? "",
       sourceTemplateDataUrl: template.sourceTemplateDataUrl ?? "",
+      sourceTemplateText: template.sourceTemplateText ?? "",
       scope: normalizeOutputTemplateScope(template.scope),
       compatibleTaskIds: Array.isArray(template.compatibleTaskIds) ? template.compatibleTaskIds : [],
       slots: Array.isArray(template.slots) && template.slots.length ? template.slots : ["Title", "Main content", "Next steps"],
@@ -2811,25 +2835,27 @@ function normalizeOutputTemplateScope(scope: OutputTemplate["scope"]): OutputTem
 }
 
 function applyOutputTemplate(output: string, template: OutputTemplate) {
-  const trimmed = output.trim();
+  const trimmed = cleanChatGptOutput(output);
   if (!trimmed) return "";
 
-  const slotGuide = template.slots.map((slot) => `- ${slot}`).join("\n");
   return [
-    `# ${template.name}`,
-    "",
-    `Format target: ${template.format}`,
-    template.description ? `Template purpose: ${template.description}` : "",
-    template.style ? `Style rules: ${template.style}` : "",
-    "",
-    "## Template Slots",
-    slotGuide,
-    "",
-    "## Content",
+    `# ${template.brandName || template.name}`,
     trimmed,
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function cleanChatGptOutput(output: string) {
+  return output
+    .replace(/^```(?:markdown|md|text)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .replace(/^\s*(?:Here is|Sure, here is|Below is).{0,120}:\s*/i, "")
+    .replace(/^#+\s*(?:Template Slots|Content|Format target|Template purpose|Style rules)\s*$/gim, "")
+    .replace(/^(?:Format target|Template purpose|Style rules):.*$/gim, "")
+    .replace(/<\/?[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function normalizeWorkTask(task: WorkTask): WorkTask {
@@ -2971,19 +2997,26 @@ function buildTaskSummary(tasks: WorkTask[]) {
 
 function buildReminderPlanner(tasks: WorkTask[], now: number) {
   const openTasks = tasks.filter((item) => item.status !== "Closed");
-  const planned = openTasks
-    .filter((item) => isValidDateTime(item.reminderAt))
-    .sort((a, b) => dateValue(a.reminderAt) - dateValue(b.reminderAt));
+  const scheduled = openTasks
+    .filter((item) => scheduleValue(item) !== Number.MAX_SAFE_INTEGER)
+    .sort((a, b) => scheduleValue(a) - scheduleValue(b));
+  const todayStart = startOfToday(now);
+  const tomorrowStart = startOfTomorrow(now);
+  const dayAfterTomorrowStart = startOfDayOffset(now, 2);
 
   return {
-    overdue: planned.filter((item) => dateValue(item.reminderAt) < startOfToday(now)),
-    today: planned.filter((item) => {
-      const value = dateValue(item.reminderAt);
-      return value >= startOfToday(now) && value < startOfTomorrow(now);
+    overdue: scheduled.filter((item) => scheduleValue(item) < todayStart),
+    today: scheduled.filter((item) => {
+      const value = scheduleValue(item);
+      return value >= todayStart && value < tomorrowStart;
     }),
-    upcoming: planned.filter((item) => dateValue(item.reminderAt) >= startOfTomorrow(now)),
-    unscheduled: openTasks
-      .filter((item) => !isValidDateTime(item.reminderAt))
+    tomorrow: scheduled.filter((item) => {
+      const value = scheduleValue(item);
+      return value >= tomorrowStart && value < dayAfterTomorrowStart;
+    }),
+    upcoming: scheduled.filter((item) => scheduleValue(item) >= dayAfterTomorrowStart),
+    planningQueue: openTasks
+      .filter((item) => scheduleValue(item) === Number.MAX_SAFE_INTEGER)
       .sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority) || dateValue(a.dueDate) - dateValue(b.dueDate)),
   };
 }
@@ -3034,20 +3067,29 @@ function taskDateLabel(task: WorkTask) {
 }
 
 function reminderLabel(task: WorkTask, now: number) {
-  if (!isValidDateTime(task.reminderAt)) return "No reminder";
-  const value = dateValue(task.reminderAt);
+  const value = scheduleValue(task);
+  if (value === Number.MAX_SAFE_INTEGER) return "No reminder or due date";
   const dateText = new Date(value).toLocaleString();
+  const source = isValidDateTime(task.reminderAt) ? "Reminder" : "Due date";
   if (value < startOfToday(now)) return `Overdue: ${dateText}`;
-  if (value < startOfTomorrow(now)) return `Today: ${dateText}`;
-  return `Upcoming: ${dateText}`;
+  if (value < startOfTomorrow(now)) return `${source} today: ${dateText}`;
+  if (value < startOfDayOffset(now, 2)) return `${source} tomorrow: ${dateText}`;
+  return `${source} upcoming: ${dateText}`;
 }
 
 function reminderState(task: WorkTask, now: number) {
-  if (!isValidDateTime(task.reminderAt)) return "unscheduled";
-  const value = dateValue(task.reminderAt);
+  const value = scheduleValue(task);
+  if (value === Number.MAX_SAFE_INTEGER) return "unscheduled";
   if (value < startOfToday(now)) return "overdue";
   if (value < startOfTomorrow(now)) return "today";
+  if (value < startOfDayOffset(now, 2)) return "tomorrow";
   return "upcoming";
+}
+
+function scheduleValue(task: WorkTask) {
+  if (isValidDateTime(task.reminderAt)) return dateValue(task.reminderAt);
+  if (task.dueDate) return new Date(`${task.dueDate}T00:00:00`).getTime();
+  return Number.MAX_SAFE_INTEGER;
 }
 
 function isOverdue(task: WorkTask) {
@@ -3072,8 +3114,12 @@ function startOfToday(now: number) {
 }
 
 function startOfTomorrow(now: number) {
+  return startOfDayOffset(now, 1);
+}
+
+function startOfDayOffset(now: number, offsetDays: number) {
   const date = new Date(startOfToday(now));
-  date.setDate(date.getDate() + 1);
+  date.setDate(date.getDate() + offsetDays);
   return date.getTime();
 }
 
@@ -3168,6 +3214,35 @@ async function readPdfText(file: File) {
   return extracted || "The PDF file was read, but no selectable text was found. If it is scanned or image-only, paste the important text into the input box.";
 }
 
+async function extractTemplateReferenceText(file: File) {
+  const isDocx = /\.docx$/i.test(file.name);
+  const isPptx = /\.pptx$/i.test(file.name);
+  const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+  const isText = file.type.startsWith("text/") || /\.(md|txt|csv|json|html)$/i.test(file.name);
+  const extracted = isDocx
+    ? await readDocxText(file)
+    : isPptx
+      ? await readPptxText(file)
+    : isPdf
+      ? await readPdfText(file)
+    : isText
+      ? await file.text()
+      : "";
+  const placeholders = extractLikelyPlaceholders(extracted);
+  return [
+    extracted ? extracted.slice(0, 30_000) : "No readable text could be extracted from this maintained template source.",
+    placeholders.length ? `\nDetected placeholders:\n${placeholders.map((item) => `- ${item}`).join("\n")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function extractLikelyPlaceholders(text: string) {
+  const matches = text.match(/\{\{[^}]+\}\}|\[[^\]]+\]|<[A-Z][^>]+>/g) ?? [];
+  return Array.from(new Set(matches.map((item) => item.trim()))).slice(0, 80);
+}
+
 function comparePptxPartNames(left: string, right: string) {
   return pptxPartNumber(left) - pptxPartNumber(right);
 }
@@ -3245,7 +3320,7 @@ function buildFullLlmPrompt(
     `Source limitations: ${sourceLimitations.length ? sourceLimitations.join(" ") : "No major source limitations detected."}`,
     "Assumptions policy: State important assumptions explicitly. Do not invent missing facts, figures, dates, commitments, or document contents.",
     `Output structure: Use the task sections and map the content into the output template slots named below.`,
-    `Formatting/export target: ${outputTemplate.format}${outputTemplate.format === "PPTX" ? " (return PPTX-ready Markdown; the app does not generate PowerPoint files yet)" : ""}.`,
+    `Formatting/export target: ${outputTemplate.format}. The app will render the pasted answer into DOCX, PDF, or PPTX using the selected maintained template profile.`,
     "",
     "PROJECT",
     `Name: ${projectName}`,
@@ -3269,9 +3344,13 @@ function buildFullLlmPrompt(
     `Description: ${outputTemplate.description || "None"}`,
     `Group: ${outputTemplate.group}`,
     `Preferred format: ${outputTemplate.format}`,
+    `Maintained source template: ${outputTemplate.sourceTemplateName || "None uploaded"}`,
     `Compatible task IDs: ${outputTemplate.compatibleTaskIds.length ? outputTemplate.compatibleTaskIds.join(", ") : "Any"}`,
     `Slots: ${outputTemplate.slots.join(", ")}`,
     `Style rules: ${outputTemplate.style || "None"}`,
+    outputTemplate.sourceTemplateText
+      ? `Extracted source template text and placeholders:\n${outputTemplate.sourceTemplateText}`
+      : "Extracted source template text and placeholders: None. Use the output template slots and style rules.",
     "",
     "INPUT QUALITY CHECK",
     `Status: ${inputQuality.status}`,
@@ -3297,8 +3376,10 @@ function buildFullLlmPrompt(
     "",
     "INSTRUCTIONS",
     "Create the requested output as a new, business-ready document, summary, or email draft according to the selected output type.",
-    "Map the answer to the output template slots. Use clear Markdown headings that match the selected template where possible.",
-    "If the selected output template is Presentation Deck, return slide-by-slide Markdown. Each slide must include Slide title, Key message, Bullets, Speaker notes, and Visual direction.",
+    "Map the answer to the output template slots and any placeholders found in the maintained source template.",
+    "Return clean Markdown only. Do not wrap the answer in code fences. Do not include XML, HTML, template metadata, or commentary about how the answer was created.",
+    "For image needs, insert explicit placeholders in this format: [IMAGE PLACEHOLDER: short description | suggested source or visual direction].",
+    "If the selected output template is a presentation, return slide-by-slide Markdown. Each slide must include Slide title, Key message, Bullets, Speaker notes, Visual direction, and Image placeholders where useful.",
     "If the selected output template is AI prompt generator, return a clean reusable prompt block with no surrounding commentary.",
     "If the requested output is an email, include a usable subject line and email body.",
     "If the requested output is a summary, distinguish confirmed information, assumptions, risks, gaps, and action items.",
@@ -3320,11 +3401,19 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       const trimmed = line.trim();
       if (!trimmed) return { type: "paragraph" as const, level: 0, text: "" };
       const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
-      if (headingMatch) return { type: "heading" as const, level: headingMatch[1].length, text: headingMatch[2] };
-      if (/^[-*]\s+/.test(trimmed)) return { type: "bullet" as const, level: 0, text: trimmed.replace(/^[-*]\s+/, "") };
-      if (/^\d+\.\s+/.test(trimmed)) return { type: "numbered" as const, level: 0, text: trimmed.replace(/^\d+\.\s+/, "") };
-      return { type: "paragraph" as const, level: 0, text: trimmed.replace(/^\*\*([^*]+):\*\*\s*/, "$1: ") };
+      if (headingMatch) return { type: "heading" as const, level: headingMatch[1].length, text: cleanInlineMarkdown(headingMatch[2]) };
+      if (/^[-*]\s+/.test(trimmed)) return { type: "bullet" as const, level: 0, text: cleanInlineMarkdown(trimmed.replace(/^[-*]\s+/, "")) };
+      if (/^\d+\.\s+/.test(trimmed)) return { type: "numbered" as const, level: 0, text: cleanInlineMarkdown(trimmed.replace(/^\d+\.\s+/, "")) };
+      return { type: "paragraph" as const, level: 0, text: cleanInlineMarkdown(trimmed.replace(/^\*\*([^*]+):\*\*\s*/, "$1: ")) };
     });
+}
+
+function cleanInlineMarkdown(text: string) {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .trim();
 }
 
 function dataUrlToUint8Array(dataUrl: string) {
@@ -3498,17 +3587,19 @@ async function toPptxBlob(markdown: string, template: OutputTemplate) {
     const blocks = parseMarkdownBlocks(slideContent).filter((block) => block.text);
     const title = blocks.find((block) => block.type === "heading")?.text ?? (index === 0 ? template.name : `Slide ${index + 1}`);
     const body = blocks.filter((block) => block.text !== title).slice(0, 8);
+    const imagePlaceholders = body.filter((block) => /\[?IMAGE PLACEHOLDER:/i.test(block.text));
+    const textBody = body.filter((block) => !/\[?IMAGE PLACEHOLDER:/i.test(block.text));
     slide.addText(title, { x: 0.65, y: 0.65, w: 11.2, h: 0.55, fontSize: 28, bold: true, color: template.primaryColor, margin: 0 });
     slide.addShape(pptx.ShapeType.line, { x: 0.65, y: 1.28, w: 2.2, h: 0, line: { color: template.accentColor, width: 2 } });
 
-    const bulletLines = body.map((block) => ({
+    const bulletLines = textBody.map((block) => ({
       text: block.text,
       options: { bullet: block.type !== "paragraph" ? { type: "bullet" as const } : undefined },
     }));
     slide.addText(bulletLines.length ? bulletLines : [{ text: slideContent.replace(/^#+\s*/gm, "").slice(0, 800), options: {} }], {
       x: 0.8,
       y: 1.65,
-      w: 11.65,
+      w: imagePlaceholders.length ? 7.1 : 11.65,
       h: 4.75,
       fontSize: 15,
       color: "171827",
@@ -3516,6 +3607,28 @@ async function toPptxBlob(markdown: string, template: OutputTemplate) {
       fit: "shrink",
       valign: "top",
     });
+    if (imagePlaceholders.length) {
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 8.25,
+        y: 1.65,
+        w: 4.1,
+        h: 3.1,
+        fill: { color: template.secondaryColor },
+        line: { color: template.accentColor },
+      });
+      slide.addText(imagePlaceholders.map((item) => item.text.replace(/^\[?IMAGE PLACEHOLDER:\s*/i, "").replace(/\]?$/g, "")).join("\n\n"), {
+        x: 8.5,
+        y: 1.95,
+        w: 3.6,
+        h: 2.4,
+        fontSize: 11,
+        color: template.primaryColor,
+        bold: true,
+        fit: "shrink",
+        valign: "middle",
+        align: "center",
+      });
+    }
     slide.addText(`${brandedTitle(template)} | ${index + 1}`, { x: 0.65, y: 7.05, w: 12, h: 0.22, fontSize: 7, color: "627168", align: "right" });
   });
 
