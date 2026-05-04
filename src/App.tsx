@@ -534,7 +534,7 @@ function App() {
   const [workTasks, setWorkTasks] = useState<WorkTask[]>([]);
   const [notes, setNotes] = useState<AppNote[]>([]);
   const [activeWorkTaskId, setActiveWorkTaskId] = useState("");
-  const [viewMode, setViewMode] = useState<"home" | "work" | "projects" | "reminders" | "notes" | "mobile">("home");
+  const [viewMode, setViewMode] = useState<"home" | "work" | "reminders" | "notes" | "mobile">("home");
   const [quickTaskTitle, setQuickTaskTitle] = useState("");
   const [quickTaskDetails, setQuickTaskDetails] = useState("");
   const [quickChecklistDraft, setQuickChecklistDraft] = useState("");
@@ -1015,6 +1015,32 @@ function App() {
     updateWorkTask(item.id, "favorite", !item.favorite);
   }
 
+  function openCaptureTask() {
+    setViewMode("work");
+    window.setTimeout(() => {
+      document.getElementById("quick-create-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  }
+
+  function openAiStudio() {
+    const studioTask = activeWorkTask ?? sortedProjectTasks.find((item) => item.status !== "Closed") ?? sortedProjectTasks[0];
+    if (studioTask) openWorkTask(studioTask);
+    setViewMode("work");
+    window.setTimeout(() => {
+      document.getElementById(studioTask ? "ai-workspace-section" : "quick-create-section")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 80);
+  }
+
+  function openHomeProjectDashboard() {
+    setViewMode("home");
+    window.setTimeout(() => {
+      document.getElementById("home-project-dashboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  }
+
   function removeWorkTask(id: string) {
     setWorkTasks((current) => current.filter((item) => item.id !== id));
     void deleteTask(id);
@@ -1400,10 +1426,6 @@ function App() {
             <CalendarClock size={17} />
             Reminders
           </button>
-          <button className={viewMode === "projects" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("projects")} type="button">
-            <BarChart3 size={17} />
-            Projects
-          </button>
           <button className={viewMode === "mobile" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("mobile")} type="button">
             <Smartphone size={17} />
             Mobile
@@ -1428,7 +1450,11 @@ function App() {
           <h1>{viewMode === "home" ? "Today, tasks, notes, and AI drafts" : "Project work assistant"}</h1>
         </div>
         <div className="topbar-actions hero-actions">
-          <button className="primary-button ai-action" onClick={() => setViewMode("work")} type="button">
+          <button className="primary-button" onClick={openCaptureTask} type="button">
+            <Plus size={16} />
+            + Capture Task
+          </button>
+          <button className="ghost-button ai-action" onClick={openAiStudio} type="button">
             <WandSparkles size={16} />
             Open AI studio
           </button>
@@ -1587,14 +1613,86 @@ function App() {
               </div>
               <p className="context-copy">Turn task notes, uploaded documents, PowerPoint text, and checklists into document drafts, summaries, reports, and emails.</p>
               <div className="ai-studio-actions">
-                <button className="primary-button ai-action" onClick={() => setViewMode("work")} type="button">
+                <button className="primary-button ai-action" onClick={openAiStudio} type="button">
                   <WandSparkles size={16} />
                   Prepare prompt
                 </button>
-                <button className="ghost-button" onClick={() => setViewMode("projects")} type="button">
+                <button className="ghost-button" onClick={openHomeProjectDashboard} type="button">
                   <BarChart3 size={16} />
-                  Project view
+                  Project dashboard
                 </button>
+              </div>
+            </section>
+          </section>
+
+          <section className="home-project-dashboard" id="home-project-dashboard">
+            <section className="summary-grid">
+              <div className="summary-card summary-total">
+                <strong>{summary.total}</strong>
+                <span>Total tasks</span>
+              </div>
+              <div className="summary-card summary-open">
+                <strong>{summary.open}</strong>
+                <span>Open</span>
+              </div>
+              <div className="summary-card summary-progress">
+                <strong>{summary.inProgress}</strong>
+                <span>In progress</span>
+              </div>
+              <div className="summary-card summary-blocked">
+                <strong>{summary.blocked}</strong>
+                <span>Blocked</span>
+              </div>
+              <div className="summary-card summary-later">
+                <strong>{summary.toDoLater}</strong>
+                <span>To do later</span>
+              </div>
+              <div className="summary-card summary-urgent">
+                <strong>{summary.urgent}</strong>
+                <span>Urgent</span>
+              </div>
+              <div className="summary-card summary-reminders">
+                <strong>{summary.reminders}</strong>
+                <span>Due reminders</span>
+              </div>
+              <div className="summary-card summary-complete">
+                <strong>{summary.closed}</strong>
+                <span>Closed</span>
+              </div>
+            </section>
+
+            <section className="panel dashboard-panel">
+              <div className="result-header">
+                <h2>
+                  <BarChart3 size={18} />
+                  Project dashboard
+                </h2>
+              </div>
+              <div className="project-dashboard-grid">
+                {projectDashboard.map((item) => (
+                  <button
+                    key={item.projectId}
+                    className={projectId === item.projectId ? "project-dashboard-card active" : "project-dashboard-card"}
+                    onClick={() => {
+                      updateProject(item.projectId);
+                      setViewMode("work");
+                      window.setTimeout(() => {
+                        document.getElementById("quick-create-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }, 80);
+                    }}
+                    type="button"
+                  >
+                    <strong>{projects[item.projectId].name}</strong>
+                    <span>{item.total} tasks</span>
+                    <div className="mini-status-grid">
+                      <small>Open {item.open}</small>
+                      <small>Progress {item.inProgress}</small>
+                      <small>Blocked {item.blocked}</small>
+                      <small>Later {item.toDoLater}</small>
+                      <small>Closed {item.closed}</small>
+                    </div>
+                  </button>
+                ))}
               </div>
             </section>
           </section>
@@ -1716,7 +1814,7 @@ function App() {
                   <strong>{reminderPlanner.overdue.length + reminderPlanner.today.length}</strong>
                   <span>Due now</span>
                 </button>
-                <button onClick={() => setViewMode("projects")} type="button">
+                <button onClick={openHomeProjectDashboard} type="button">
                   <strong>{summary.closed}</strong>
                   <span>Closed</span>
                 </button>
@@ -2154,113 +2252,6 @@ function App() {
         </section>
       )}
 
-      {viewMode === "projects" && (
-        <>
-
-      <section className="summary-grid">
-        <div className="summary-card summary-total">
-          <strong>{summary.total}</strong>
-          <span>Total tasks</span>
-        </div>
-        <div className="summary-card summary-open">
-          <strong>{summary.open}</strong>
-          <span>Open</span>
-        </div>
-        <div className="summary-card summary-progress">
-          <strong>{summary.inProgress}</strong>
-          <span>In progress</span>
-        </div>
-        <div className="summary-card summary-blocked">
-          <strong>{summary.blocked}</strong>
-          <span>Blocked</span>
-        </div>
-        <div className="summary-card summary-later">
-          <strong>{summary.toDoLater}</strong>
-          <span>To do later</span>
-        </div>
-        <div className="summary-card summary-urgent">
-          <strong>{summary.urgent}</strong>
-          <span>Urgent</span>
-        </div>
-        <div className="summary-card summary-reminders">
-          <strong>{summary.reminders}</strong>
-          <span>Due reminders</span>
-        </div>
-        <div className="summary-card summary-complete">
-          <strong>{summary.closed}</strong>
-          <span>Closed</span>
-        </div>
-      </section>
-
-      <section className="panel dashboard-panel">
-        <div className="result-header">
-          <h2>
-            <BarChart3 size={18} />
-            Project dashboard
-          </h2>
-        </div>
-        <div className="project-dashboard-grid">
-          {projectDashboard.map((item) => (
-            <button
-              key={item.projectId}
-              className={projectId === item.projectId ? "project-dashboard-card active" : "project-dashboard-card"}
-              onClick={() => {
-                updateProject(item.projectId);
-              }}
-              type="button"
-            >
-              <strong>{projects[item.projectId].name}</strong>
-              <span>{item.total} tasks</span>
-              <div className="mini-status-grid">
-                <small>Open {item.open}</small>
-                <small>Progress {item.inProgress}</small>
-                <small>Blocked {item.blocked}</small>
-                <small>Later {item.toDoLater}</small>
-                <small>Closed {item.closed}</small>
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel dashboard-panel">
-        <div className="result-header">
-          <h2>
-            <BriefcaseBusiness size={18} />
-            {project.name} details
-          </h2>
-          <button className="primary-button" onClick={() => setViewMode("work")} type="button">
-            <ArrowRight size={16} />
-            Open project work
-          </button>
-        </div>
-        <p className="context-copy">{project.context}</p>
-        {selectedProjectStats && (
-          <div className="project-stat-list project-stat-columns">
-            {taskStatuses.map((status) => (
-              <div className={`project-stat-row status-${statusSlug(status)}`} key={status}>
-                <span>{status}</span>
-                <strong>{selectedProjectStats[statusKey(status)]}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="project-detail-list">
-          {sortedProjectTasks.slice(0, 8).map((item) => (
-            <button key={item.id} className={taskClassName(item, activeWorkTaskId)} onClick={() => openWorkTask(item)} type="button">
-              <span>
-                <strong>{item.title}</strong>
-                <small>{item.category} - {item.priority} - {item.status}</small>
-              </span>
-              <small>{taskDateLabel(item)}</small>
-            </button>
-          ))}
-          {sortedProjectTasks.length === 0 && <p className="empty">No tasks have been created for this project yet.</p>}
-        </div>
-      </section>
-        </>
-      )}
-
       {viewMode === "work" && (
         <>
 
@@ -2486,7 +2477,7 @@ function App() {
         </aside>
 
         <section className="work-area">
-          <section className="panel quick-create-panel">
+          <section className="panel quick-create-panel" id="quick-create-section">
             <div className="result-header">
               <h2>
                 <Plus size={18} />

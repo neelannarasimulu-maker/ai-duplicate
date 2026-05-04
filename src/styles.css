@@ -656,6 +656,11 @@ summary:focus-visible {
   grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
 }
 
+.home-project-dashboard {
+  display: grid;
+  gap: 14px;
+}
+
 .favorites-panel {
   display: grid;
   gap: 12px;
