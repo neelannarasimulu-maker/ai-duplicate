@@ -63,6 +63,7 @@ export type WorkTask = {
   dueDate: string;
   reminderAt: string;
   status: TaskStatus;
+  favorite: boolean;
   statusHistory: Array<{
     status: TaskStatus;
     changedAt: string;
@@ -105,6 +106,7 @@ export type AppNote = {
   content?: string;
   entries: AppNoteEntry[];
   pinned: boolean;
+  favorite: boolean;
   createdAt: string;
   updatedAt: string;
 };

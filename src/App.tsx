@@ -18,6 +18,7 @@ import {
   Save,
   Smartphone,
   Sparkles,
+  Star,
   StickyNote,
   Trash2,
   Upload,
@@ -310,9 +311,37 @@ const defaultOutputTemplates: OutputTemplate[] = [
     format: "DOCX",
     ...defaultBrand,
     scope: "global",
-    compatibleTaskIds: ["draft-document", "create-report", "strategy-vision"],
+    compatibleTaskIds: ["draft-document", "summarize", "create-report", "market-research", "strategy-vision"],
     slots: ["Title", "Executive summary", "Background", "Main content", "Recommendations", "Next steps"],
     style: "Use H1 for the title, H2 for major sections, concise paragraphs, and action-oriented recommendations.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "checklist-output",
+    name: "Checklist",
+    description: "Tickable checklist output for shopping lists, subtasks, follow-ups, and simple action tracking.",
+    group: "Checklist",
+    format: "Markdown",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["checklist"],
+    slots: ["Checklist", "Notes", "Next steps"],
+    style: "Return a concise tickable Markdown checklist using - [ ] items. Keep each item specific, short, and easy to complete.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "meeting-brief-output",
+    name: "Meeting Brief",
+    description: "Decision-focused meeting pack with agenda, pre-read, risks, and actions.",
+    group: "Brief",
+    format: "DOCX",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["meeting-brief"],
+    slots: ["Purpose", "Desired outcomes", "Pre-read required", "Agenda", "Current status", "Decisions needed", "Actions"],
+    style: "Make the brief practical for a live meeting. Separate discussion points, decisions, and follow-up actions.",
     createdAt: seedTimestamp,
     updatedAt: seedTimestamp,
   },
@@ -331,6 +360,20 @@ const defaultOutputTemplates: OutputTemplate[] = [
     updatedAt: seedTimestamp,
   },
   {
+    id: "process-document-output",
+    name: "Process Document",
+    description: "Operational process output with roles, steps, exceptions, and review points.",
+    group: "Document",
+    format: "DOCX",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["process-document"],
+    slots: ["Purpose", "Scope", "Roles", "SLA", "Steps", "Exceptions", "Checklist", "Owner and review date"],
+    style: "Write clear numbered process steps. Include exceptions and a short checklist for repeat execution.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
     id: "client-update",
     name: "Client Update",
     description: "Status update format for clients, sponsors, or internal stakeholders.",
@@ -341,6 +384,34 @@ const defaultOutputTemplates: OutputTemplate[] = [
     compatibleTaskIds: ["client-update", "draft-email"],
     slots: ["Subject line", "Overall status", "Progress", "Risks", "Decisions needed", "Next steps"],
     style: "Write in send-ready language. Use calm, accountable wording and make decisions or asks explicit.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "product-spec-output",
+    name: "Product / Feature Spec",
+    description: "Implementation-ready product specification for product, design, and engineering work.",
+    group: "Specification",
+    format: "DOCX",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["product-feature-spec"],
+    slots: ["Objective", "User roles", "Functional requirements", "User flows", "Data requirements", "Success criteria", "Open questions"],
+    style: "Write requirements clearly enough for implementation planning. Flag unresolved product decisions explicitly.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "ai-prompt-output",
+    name: "Reusable AI Prompt",
+    description: "Clean prompt block output with objective, inputs, constraints, and formatting rules.",
+    group: "AI",
+    format: "Markdown",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["ai-prompt-generator"],
+    slots: ["Task objective", "Input description", "Output requirements", "Formatting instructions", "Constraints"],
+    style: "Return only the reusable prompt text. Avoid surrounding commentary so it can be copied directly.",
     createdAt: seedTimestamp,
     updatedAt: seedTimestamp,
   },
@@ -398,7 +469,7 @@ const defaultOutputTemplates: OutputTemplate[] = [
     secondaryColor: "eef4f8",
     accentColor: "2c80b8",
     scope: "global",
-    compatibleTaskIds: ["draft-document", "create-report", "proposal-copy", "decision-brief"],
+    compatibleTaskIds: ["draft-document", "create-report", "proposal-copy", "decision-brief", "market-research", "meeting-brief"],
     slots: ["Title", "Executive summary", "Background", "Main content", "Recommendations", "Next steps"],
     style: "Use a formal consulting-document style with clear headings, concise paragraphs, and executive-ready recommendations.",
     createdAt: seedTimestamp,
@@ -470,8 +541,11 @@ function App() {
   const [quickChecklistItems, setQuickChecklistItems] = useState<ChecklistItem[]>([]);
   const [quickChecklistItem, setQuickChecklistItem] = useState("");
   const [noteDraft, setNoteDraft] = useState({ title: "", content: "" });
+  const [workQuickTaskDraft, setWorkQuickTaskDraft] = useState({ title: "", details: "" });
+  const [workQuickNoteDraft, setWorkQuickNoteDraft] = useState({ title: "", content: "" });
   const [mobileFullOpen, setMobileFullOpen] = useState(false);
   const [mobileSection, setMobileSection] = useState<"capture" | "tasks" | "reminders">("tasks");
+  const [taskListFilter, setTaskListFilter] = useState<"Active" | "Favorites" | TaskStatus | "All">("Active");
   const [reminderDrafts, setReminderDrafts] = useState<Record<string, string>>({});
   const [triggeredReminderIds, setTriggeredReminderIds] = useState<string[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() =>
@@ -484,8 +558,12 @@ function App() {
   const project = projects[projectId];
   const task = project.tasks.find((item) => item.id === taskId) ?? project.tasks[0];
   const availableOutputTemplates = outputTemplates.filter((item) => isOutputTemplateAvailable(item, projectId));
+  const linkedOutputTemplates = compatibleOutputTemplates(availableOutputTemplates, taskId);
   const selectedOutputTemplate =
-    availableOutputTemplates.find((item) => item.id === selectedOutputTemplateId) ?? availableOutputTemplates[0] ?? defaultOutputTemplates[0];
+    linkedOutputTemplates.find((item) => item.id === selectedOutputTemplateId) ??
+    preferredOutputTemplateForTask(projectId, taskId, availableOutputTemplates) ??
+    linkedOutputTemplates[0] ??
+    defaultOutputTemplates[0];
   const projectHistory = savedOutputs.filter((item) => item.projectId === projectId);
   const activeWorkTask = workTasks.find((item) => item.id === activeWorkTaskId);
   const projectDashboard = buildProjectDashboard(workTasks);
@@ -505,6 +583,14 @@ function App() {
   const reminderPlanner = buildReminderPlanner(workTasks, now);
   const noteEntryCount = notes.reduce((total, note) => total + note.entries.length, 0);
   const activeFocusTasks = sortedWorkTasks.filter((item) => item.status !== "Closed").slice(0, 6);
+  const favoriteTasks = sortedWorkTasks.filter((item) => item.favorite).slice(0, 8);
+  const favoriteNotes = [...notes]
+    .filter((note) => note.favorite)
+    .sort((a, b) => dateValue(b.updatedAt) - dateValue(a.updatedAt))
+    .slice(0, 6);
+  const visibleProjectTasks = filterTasksByListMode(sortedProjectTasks, taskListFilter);
+  const mobileActiveProjectTasks = sortedProjectTasks.filter((item) => item.status !== "Closed");
+  const mobileFavoriteProjectTasks = sortedProjectTasks.filter((item) => item.favorite);
   const recentNotes = [...notes].sort((a, b) => dateValue(b.updatedAt) - dateValue(a.updatedAt)).slice(0, 4);
 
   const missingDetails = useMemo(() => {
@@ -518,9 +604,9 @@ function App() {
   const inputQuality = useMemo(() => buildInputQuality(missingDetails, assets), [assets, missingDetails]);
 
   useEffect(() => {
-    if (availableOutputTemplates.some((item) => item.id === selectedOutputTemplateId)) return;
-    setSelectedOutputTemplateId((availableOutputTemplates[0] ?? defaultOutputTemplates[0]).id);
-  }, [availableOutputTemplates, selectedOutputTemplateId]);
+    if (linkedOutputTemplates.some((item) => item.id === selectedOutputTemplateId)) return;
+    setSelectedOutputTemplateId(selectedOutputTemplate.id);
+  }, [linkedOutputTemplates, selectedOutputTemplate.id, selectedOutputTemplateId]);
 
   async function refreshData() {
     setSyncing(true);
@@ -603,8 +689,10 @@ function App() {
   function updateProject(nextProjectId: ProjectId) {
     setProjectId(nextProjectId);
     const nextTaskId = projects[nextProjectId].tasks[0].id;
+    const nextOutputTemplate = preferredOutputTemplateForTask(nextProjectId, nextTaskId, outputTemplates) ?? defaultOutputTemplates[0];
     setTaskId(nextTaskId);
-    setRequirements(requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTaskId), selectedOutputTemplate));
+    setSelectedOutputTemplateId(nextOutputTemplate.id);
+    setRequirements(requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTaskId), nextOutputTemplate));
     setGptPrompt("");
     setResult("");
     setMessage("");
@@ -619,17 +707,24 @@ function App() {
   function selectTemplate(nextTaskId: string) {
     setTaskId(nextTaskId);
     const nextTemplate = project.tasks.find((item) => item.id === nextTaskId) ?? project.tasks[0];
-    const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(projectId, nextTaskId), selectedOutputTemplate);
+    const nextOutputTemplate = preferredOutputTemplateForTask(projectId, nextTaskId, availableOutputTemplates) ?? selectedOutputTemplate;
+    const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(projectId, nextTaskId), nextOutputTemplate);
+    setSelectedOutputTemplateId(nextOutputTemplate.id);
     setRequirements(nextRequirements);
     if (activeWorkTask) {
       updateWorkTask(activeWorkTask.id, "templateId", nextTaskId);
       updateWorkTask(activeWorkTask.id, "category", nextTemplate.category);
+      updateWorkTask(activeWorkTask.id, "outputTemplateId", nextOutputTemplate.id);
       updateWorkTask(activeWorkTask.id, "requirements", nextRequirements);
     }
   }
 
   function selectOutputTemplate(nextOutputTemplateId: string) {
     const nextTemplate = outputTemplates.find((item) => item.id === nextOutputTemplateId) ?? defaultOutputTemplates[0];
+    if (!isOutputTemplateCompatibleWithTask(nextTemplate, taskId)) {
+      setMessage(`${nextTemplate.name} is not linked to ${task.label}. Choose a linked output template or edit the template compatibility.`);
+      return;
+    }
     const nextRequirements = requirementsLinkedToOutputTemplate(requirements, nextTemplate);
     setSelectedOutputTemplateId(nextOutputTemplateId);
     setRequirements(nextRequirements);
@@ -722,6 +817,22 @@ function App() {
     });
   }
 
+  function createQuickWorkTask() {
+    const title = workQuickTaskDraft.title.trim() || task.label;
+    const details = workQuickTaskDraft.details.trim();
+    createTask({
+      title,
+      details,
+      taskProjectId: projectId,
+      templateId: task.id,
+      category: task.category,
+    });
+    setWorkQuickTaskDraft({ title: "", details: "" });
+    window.setTimeout(() => {
+      document.getElementById("task-details-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  }
+
   function createQuickTask() {
     if (!quickTaskTitle.trim() && !quickTaskDetails.trim() && quickChecklistItems.length === 0) {
       setMessage("Add a quick title, note, or checklist item first.");
@@ -771,11 +882,12 @@ function App() {
     category: string;
     checklist?: ChecklistItem[];
   }) {
+    const outputTemplate = preferredOutputTemplateForTask(taskProjectId, templateId, outputTemplates) ?? selectedOutputTemplate;
     const newTask: WorkTask = {
       id: createId(),
       projectId: taskProjectId,
       templateId,
-      outputTemplateId: selectedOutputTemplate.id,
+      outputTemplateId: outputTemplate.id,
       title,
       details,
       category,
@@ -783,11 +895,12 @@ function App() {
       dueDate: "",
       reminderAt: "",
       status: "Open",
+      favorite: false,
       statusHistory: [{ status: "Open", changedAt: new Date().toISOString() }],
       checklist,
       input: "",
       assets: [],
-      requirements: requirementsLinkedToOutputTemplate(taskRequirements(taskProjectId, templateId), selectedOutputTemplate),
+      requirements: requirementsLinkedToOutputTemplate(taskRequirements(taskProjectId, templateId), outputTemplate),
       gptPrompt: "",
       result: "",
       createdAt: new Date().toISOString(),
@@ -856,9 +969,13 @@ function App() {
     setActiveWorkTaskId(normalized.id);
     setProjectId(normalized.projectId);
     setTaskId(normalized.templateId);
-    const nextOutputTemplateId = normalized.outputTemplateId ?? defaultOutputTemplates[0].id;
-    const nextOutputTemplate = outputTemplates.find((item) => item.id === nextOutputTemplateId) ?? defaultOutputTemplates[0];
-    setSelectedOutputTemplateId(nextOutputTemplateId);
+    const taskAvailableOutputTemplates = outputTemplates.filter((template) => isOutputTemplateAvailable(template, normalized.projectId));
+    const savedOutputTemplate = taskAvailableOutputTemplates.find((template) => template.id === normalized.outputTemplateId);
+    const nextOutputTemplate =
+      savedOutputTemplate && isOutputTemplateCompatibleWithTask(savedOutputTemplate, normalized.templateId)
+        ? savedOutputTemplate
+        : preferredOutputTemplateForTask(normalized.projectId, normalized.templateId, taskAvailableOutputTemplates) ?? defaultOutputTemplates[0];
+    setSelectedOutputTemplateId(nextOutputTemplate.id);
     setInput(normalized.input);
     setAssets(normalized.assets);
     setRequirements(requirementsLinkedToOutputTemplate(normalized.requirements, nextOutputTemplate));
@@ -876,6 +993,26 @@ function App() {
         block: "start",
       });
     }, 80);
+  }
+
+  function openFavoriteTask(item: WorkTask) {
+    openWorkTask(item);
+    setViewMode("work");
+    window.setTimeout(() => {
+      document.getElementById("task-details-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  }
+
+  function openNote(note: AppNote) {
+    setProjectId(note.projectId);
+    setViewMode("notes");
+    window.setTimeout(() => {
+      document.getElementById(`note-${note.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  }
+
+  function toggleTaskFavorite(item: WorkTask) {
+    updateWorkTask(item.id, "favorite", !item.favorite);
   }
 
   function removeWorkTask(id: string) {
@@ -979,12 +1116,37 @@ function App() {
         ? [{ id: createId(), content: noteDraft.content.trim(), createdAt: timestamp, updatedAt: timestamp }]
         : [],
       pinned: false,
+      favorite: false,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
     persistNotes([newNote, ...notes]);
     setNoteDraft({ title: "", content: "" });
     setMessage("Note saved.");
+  }
+
+  function createQuickWorkNote() {
+    if (!workQuickNoteDraft.title.trim() && !workQuickNoteDraft.content.trim()) {
+      setMessage("Add a quick note title or detail first.");
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    const newNote: AppNote = {
+      id: createId(),
+      projectId,
+      title: workQuickNoteDraft.title.trim() || "Untitled note",
+      entries: workQuickNoteDraft.content.trim()
+        ? [{ id: createId(), content: workQuickNoteDraft.content.trim(), createdAt: timestamp, updatedAt: timestamp }]
+        : [],
+      pinned: false,
+      favorite: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    persistNotes([newNote, ...notes]);
+    setWorkQuickNoteDraft({ title: "", content: "" });
+    setMessage("Quick note saved.");
   }
 
   function updateNote(id: string, patch: Partial<AppNote>) {
@@ -1313,6 +1475,40 @@ function App() {
             </div>
           </section>
 
+          {(favoriteTasks.length > 0 || favoriteNotes.length > 0) && (
+            <section className="panel favorites-panel">
+              <div className="result-header">
+                <h2>
+                  <Star size={18} />
+                  Favorites
+                </h2>
+                <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
+                  Open work
+                </button>
+              </div>
+              <div className="favorite-grid">
+                {favoriteTasks.map((item) => (
+                  <button className="favorite-card" key={item.id} onClick={() => openFavoriteTask(item)} type="button">
+                    <Star size={15} />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{projects[item.projectId].name} - task details</small>
+                    </span>
+                  </button>
+                ))}
+                {favoriteNotes.map((note) => (
+                  <button className="favorite-card note-favorite" key={note.id} onClick={() => openNote(note)} type="button">
+                    <StickyNote size={15} />
+                    <span>
+                      <strong>{note.title}</strong>
+                      <small>{projects[note.projectId].name} - note</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="home-grid">
             <section className="panel focus-panel">
               <div className="result-header">
@@ -1326,13 +1522,14 @@ function App() {
               </div>
               <div className="all-task-list">
                 {activeFocusTasks.map((item) => (
-                  <button key={item.id} className={taskClassName(item, activeWorkTaskId)} onClick={() => openWorkTask(item)} type="button">
-                    <span>
-                      <strong>{item.title}</strong>
-                      <small>{projects[item.projectId].name} - {item.category} - {item.status}</small>
-                    </span>
-                    <small>{taskDateLabel(item)}</small>
-                  </button>
+                  <TaskListRow
+                    activeWorkTaskId={activeWorkTaskId}
+                    key={item.id}
+                    onOpen={openFavoriteTask}
+                    onToggleFavorite={toggleTaskFavorite}
+                    projectLabel={projects[item.projectId].name}
+                    task={item}
+                  />
                 ))}
                 {activeFocusTasks.length === 0 && <p className="empty">No active tasks. Lovely clean slate.</p>}
               </div>
@@ -1371,7 +1568,7 @@ function App() {
               </div>
               <div className="note-snapshot-list">
                 {recentNotes.map((note) => (
-                  <button className="note-snapshot" key={note.id} onClick={() => setViewMode("notes")} type="button">
+                  <button className="note-snapshot" key={note.id} onClick={() => openNote(note)} type="button">
                     <span className={`project-chip project-${note.projectId}`}>{projects[note.projectId].name}</span>
                     <strong>{note.title}</strong>
                     <small>{note.entries[0]?.content || "No entries yet"}</small>
@@ -1492,16 +1689,71 @@ function App() {
 
           {mobileSection === "tasks" && (
           <section className="mobile-task-view">
-            <div className="mobile-section-header">
-              <h2>
-                <ListTodo size={18} />
-                Tasks
-              </h2>
-              <button className="primary-button" onClick={() => setMobileSection("capture")} type="button">
-                <Plus size={15} />
-                New
-              </button>
-            </div>
+            <section className="mobile-overview-panel">
+              <div className="mobile-section-header">
+                <div>
+                  <p className="eyebrow">Mobile workspace</p>
+                  <h2>
+                    <Smartphone size={18} />
+                    Today on mobile
+                  </h2>
+                </div>
+                <button className="primary-button" onClick={() => setMobileSection("capture")} type="button">
+                  <Plus size={15} />
+                  New
+                </button>
+              </div>
+              <div className="mobile-metric-grid">
+                <button onClick={() => setViewMode("work")} type="button">
+                  <strong>{summary.total - summary.closed}</strong>
+                  <span>Active</span>
+                </button>
+                <button onClick={() => setViewMode("work")} type="button">
+                  <strong>{favoriteTasks.length + favoriteNotes.length}</strong>
+                  <span>Favorites</span>
+                </button>
+                <button onClick={() => setMobileSection("reminders")} type="button">
+                  <strong>{reminderPlanner.overdue.length + reminderPlanner.today.length}</strong>
+                  <span>Due now</span>
+                </button>
+                <button onClick={() => setViewMode("projects")} type="button">
+                  <strong>{summary.closed}</strong>
+                  <span>Closed</span>
+                </button>
+              </div>
+            </section>
+
+            {(favoriteTasks.length > 0 || favoriteNotes.length > 0) && (
+              <section className="mobile-favorites">
+                <div className="mobile-section-header">
+                  <h2>
+                    <Star size={18} />
+                    Favorites
+                  </h2>
+                </div>
+                <div className="mobile-favorite-strip">
+                  {favoriteTasks.map((item) => (
+                    <button className="mobile-favorite-card" key={item.id} onClick={() => openMobileTask(item, "details")} type="button">
+                      <Star size={15} />
+                      <span>
+                        <strong>{item.title}</strong>
+                        <small>{projects[item.projectId].name} - task</small>
+                      </span>
+                    </button>
+                  ))}
+                  {favoriteNotes.map((note) => (
+                    <button className="mobile-favorite-card note-favorite" key={note.id} onClick={() => openNote(note)} type="button">
+                      <StickyNote size={15} />
+                      <span>
+                        <strong>{note.title}</strong>
+                        <small>{projects[note.projectId].name} - note</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <div className="mobile-project-strip" aria-label="Mobile project selector">
               {mobileProjectGroups.map((item) => (
                 <button
@@ -1511,26 +1763,87 @@ function App() {
                   type="button"
                 >
                   <span>{projects[item.projectId].name}</span>
-                  <strong>{item.total}</strong>
+                  <strong>{item.total - item.closed}</strong>
+                  <small>{item.favorite ? `${item.favorite} fav` : `${item.closed} closed`}</small>
                 </button>
               ))}
             </div>
             {mobileCurrentProjectGroup && (
               <div className="mobile-status-groups">
-                <div className="mobile-project-title">
-                  <strong>{projects[mobileCurrentProjectGroup.projectId].name}</strong>
-                  <span>{mobileCurrentProjectGroup.total} tasks</span>
-                </div>
-                {mobileStatusOrder.map((status) => (
+                <section className="mobile-project-title">
+                  <div>
+                    <strong>{projects[mobileCurrentProjectGroup.projectId].name}</strong>
+                    <span>{mobileActiveProjectTasks.length} active - {mobileFavoriteProjectTasks.length} favorites</span>
+                  </div>
+                  <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
+                    Full view
+                  </button>
+                </section>
+
+                {mobileFavoriteProjectTasks.length > 0 && (
+                  <section className="mobile-task-section">
+                    <div className="result-header">
+                      <h2>
+                        <Star size={18} />
+                        Project favorites
+                      </h2>
+                      <span className="subtle-count">{mobileFavoriteProjectTasks.length}</span>
+                    </div>
+                    <div className="mobile-task-list">
+                      {mobileFavoriteProjectTasks.map((item) => (
+                        <MobileTaskCard
+                          activeWorkTaskId={activeWorkTaskId}
+                          item={item}
+                          key={item.id}
+                          now={now}
+                          onOpen={openMobileTask}
+                          onToggleFavorite={toggleTaskFavorite}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                <section className="mobile-task-section">
+                  <div className="result-header">
+                    <h2>
+                      <ListTodo size={18} />
+                      Active tasks
+                    </h2>
+                    <span className="subtle-count">{mobileActiveProjectTasks.length}</span>
+                  </div>
+                  <div className="mobile-task-list">
+                    {mobileActiveProjectTasks.map((item) => (
+                      <MobileTaskCard
+                        activeWorkTaskId={activeWorkTaskId}
+                        item={item}
+                        key={item.id}
+                        now={now}
+                        onOpen={openMobileTask}
+                        onToggleFavorite={toggleTaskFavorite}
+                      />
+                    ))}
+                    {mobileActiveProjectTasks.length === 0 && <p className="empty compact-empty">No active tasks in this project.</p>}
+                  </div>
+                </section>
+
+                <details className="mobile-more-status">
+                  <summary>
+                    <span>Browse by status</span>
+                    <strong>{mobileCurrentProjectGroup.total}</strong>
+                  </summary>
+                  {mobileStatusOrder.map((status) => (
                   <MobileStatusSection
                     activeWorkTaskId={activeWorkTaskId}
                     items={mobileCurrentProjectGroup.byStatus[status]}
                     key={status}
                     now={now}
                     onOpen={openMobileTask}
+                    onToggleFavorite={toggleTaskFavorite}
                     status={status}
                   />
-                ))}
+                  ))}
+                </details>
               </div>
             )}
           </section>
@@ -1788,12 +2101,17 @@ function App() {
             {[...notes]
               .sort((a, b) => Number(b.pinned) - Number(a.pinned) || dateValue(b.updatedAt) - dateValue(a.updatedAt))
               .map((note) => (
-                <article className={note.pinned ? "note-card pinned" : "note-card"} key={note.id}>
+                <article className={`${note.pinned ? "note-card pinned" : "note-card"} ${note.favorite ? "favorite" : ""}`} id={`note-${note.id}`} key={note.id}>
                   <div className="note-card-header">
                     <span className={`project-chip project-${note.projectId}`}>{projects[note.projectId].name}</span>
-                    <button className="ghost-button icon-button" onClick={() => updateNote(note.id, { pinned: !note.pinned })} type="button" title={note.pinned ? "Unpin note" : "Pin note"}>
-                      <Pin size={15} />
-                    </button>
+                    <div className="note-card-actions">
+                      <button className={note.favorite ? "ghost-button icon-button favorite-toggle active" : "ghost-button icon-button favorite-toggle"} onClick={() => updateNote(note.id, { favorite: !note.favorite })} type="button" title={note.favorite ? "Remove favorite" : "Add favorite"}>
+                        <Star size={15} />
+                      </button>
+                      <button className="ghost-button icon-button" onClick={() => updateNote(note.id, { pinned: !note.pinned })} type="button" title={note.pinned ? "Unpin note" : "Pin note"}>
+                        <Pin size={15} />
+                      </button>
+                    </div>
                   </div>
                   <input
                     className="note-title-input"
@@ -2017,13 +2335,16 @@ function App() {
               <label>
                 Template
                 <select value={selectedOutputTemplate.id} onChange={(event) => selectOutputTemplate(event.target.value)}>
-                  {availableOutputTemplates.map((item) => (
+                  {linkedOutputTemplates.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name} ({item.group})
                     </option>
                   ))}
                 </select>
               </label>
+              <p className="context-copy compact-empty">
+                Showing output templates linked to the selected input template: {task.label}.
+              </p>
               <label>
                 Name
                 <input value={selectedOutputTemplate.name} onChange={(event) => updateSelectedOutputTemplate("name", event.target.value)} />
@@ -2165,13 +2486,24 @@ function App() {
         </aside>
 
         <section className="work-area">
-          <section className="panel">
+          <section className="panel quick-create-panel">
             <div className="result-header">
               <h2>
-                <ListTodo size={18} />
-                {project.name} tasks
+                <Plus size={18} />
+                Quick create
               </h2>
-              <div className="new-task-control">
+              <span className="subtle-count">{project.name}</span>
+            </div>
+            <div className="quick-create-grid">
+              <section className="quick-create-card">
+                <div className="quick-create-card-header">
+                  <h3>
+                    <ListTodo size={17} />
+                    Task
+                  </h3>
+                  <span>{selectedOutputTemplate.name}</span>
+                </div>
+                <div className="quick-create-template-row">
                 <label>
                   Template
                   <select value={taskId} onChange={(event) => selectTemplate(event.target.value)}>
@@ -2185,35 +2517,68 @@ function App() {
                 <label>
                   Output
                   <select value={selectedOutputTemplate.id} onChange={(event) => selectOutputTemplate(event.target.value)}>
-                    {availableOutputTemplates.map((item) => (
+                    {linkedOutputTemplates.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name}
                       </option>
                     ))}
                   </select>
                 </label>
-                <button className="primary-button" onClick={createWorkTask} type="button">
+                </div>
+                <label>
+                  Title
+                  <input
+                    value={workQuickTaskDraft.title}
+                    onChange={(event) => setWorkQuickTaskDraft((current) => ({ ...current, title: event.target.value }))}
+                    placeholder={task.label}
+                  />
+                </label>
+                <label>
+                  Notes
+                  <textarea
+                    className="small-textarea quick-textarea"
+                    value={workQuickTaskDraft.details}
+                    onChange={(event) => setWorkQuickTaskDraft((current) => ({ ...current, details: event.target.value }))}
+                    placeholder="Add enough context to start the task. You can expand it after creation."
+                  />
+                </label>
+                <button className="primary-button" onClick={createQuickWorkTask} type="button">
                   <ListTodo size={16} />
-                  New task
+                  Create task
                 </button>
-              </div>
+              </section>
+
+              <section className="quick-create-card note-quick-create">
+                <div className="quick-create-card-header">
+                  <h3>
+                    <StickyNote size={17} />
+                    Note
+                  </h3>
+                  <span>{project.name}</span>
+                </div>
+                <label>
+                  Title
+                  <input
+                    value={workQuickNoteDraft.title}
+                    onChange={(event) => setWorkQuickNoteDraft((current) => ({ ...current, title: event.target.value }))}
+                    placeholder="Decision, contact detail, useful reference..."
+                  />
+                </label>
+                <label>
+                  Detail
+                  <textarea
+                    className="small-textarea quick-textarea"
+                    value={workQuickNoteDraft.content}
+                    onChange={(event) => setWorkQuickNoteDraft((current) => ({ ...current, content: event.target.value }))}
+                    placeholder="Capture the note without leaving the work page."
+                  />
+                </label>
+                <button className="primary-button" onClick={createQuickWorkNote} type="button">
+                  <Save size={16} />
+                  Save note
+                </button>
+              </section>
             </div>
-            {sortedProjectTasks.length === 0 ? (
-              <p className="empty">Create your first task for {project.name}. It can be a document, summary, email, or a checklist-style task.</p>
-            ) : (
-              <div className="all-task-list">
-                {sortedProjectTasks.map((item) => (
-                  <button key={item.id} className={taskClassName(item, activeWorkTaskId)} onClick={() => openWorkTask(item)} type="button">
-                    <span>
-                      <strong>{item.title}</strong>
-                      <small>{item.category} - {item.priority} - {item.status}</small>
-                      <small>{taskInputQualityStatus(item)}</small>
-                    </span>
-                    <small>{taskDateLabel(item)}</small>
-                  </button>
-                ))}
-              </div>
-            )}
           </section>
 
           {activeWorkTask ? (
@@ -2226,6 +2591,10 @@ function App() {
                 <button className="ghost-button" onClick={() => updateWorkTask(activeWorkTask.id, "status", activeWorkTask.status === "Closed" ? "Open" : "Closed")} type="button">
                   <Check size={16} />
                   Mark {activeWorkTask.status === "Closed" ? "open" : "closed"}
+                </button>
+                <button className={activeWorkTask.favorite ? "ghost-button favorite-toggle active" : "ghost-button favorite-toggle"} onClick={() => toggleTaskFavorite(activeWorkTask)} type="button">
+                  <Star size={16} />
+                  {activeWorkTask.favorite ? "Favorited" : "Favorite"}
                 </button>
               </div>
               <div className="task-status-strip">
@@ -2245,12 +2614,15 @@ function App() {
                 onReminderSave={saveReminder}
                 reminderValue={reminderValue(activeWorkTask)}
                 onTemplateChange={(nextProjectId, nextTemplateId) => {
-                  const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTemplateId), selectedOutputTemplate);
+                  const nextOutputTemplate = preferredOutputTemplateForTask(nextProjectId, nextTemplateId, outputTemplates) ?? selectedOutputTemplate;
+                  const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTemplateId), nextOutputTemplate);
                   const nextTemplate = projects[nextProjectId].tasks.find((item) => item.id === nextTemplateId) ?? projects[nextProjectId].tasks[0];
                   setTaskId(nextTemplateId);
+                  setSelectedOutputTemplateId(nextOutputTemplate.id);
                   setRequirements(nextRequirements);
                   updateWorkTask(activeWorkTask.id, "templateId", nextTemplateId);
                   updateWorkTask(activeWorkTask.id, "category", nextTemplate.category);
+                  updateWorkTask(activeWorkTask.id, "outputTemplateId", nextOutputTemplate.id);
                   updateWorkTask(activeWorkTask.id, "requirements", nextRequirements);
                 }}
               />
@@ -2329,6 +2701,48 @@ function App() {
               <p className="empty">Select or create a task to expand it into AI mode.</p>
             </section>
           )}
+
+          <details className="panel task-browse-panel" open={sortedProjectTasks.length <= 6}>
+            <summary>
+              <span>
+                <ListTodo size={18} />
+                Browse {project.name} tasks
+              </span>
+              <strong>{visibleProjectTasks.length}</strong>
+            </summary>
+            {sortedProjectTasks.length === 0 ? (
+              <p className="empty">Create your first task for {project.name}. It can be a document, summary, email, or checklist-style task.</p>
+            ) : (
+              <>
+                <div className="task-list-toolbar" aria-label="Task list filters">
+                  {(["Active", "Favorites", "Open", "In Progress", "Blocked", "To Do Later", "Closed", "All"] as const).map((filter) => (
+                    <button
+                      className={taskListFilter === filter ? "active" : ""}
+                      key={filter}
+                      onClick={() => setTaskListFilter(filter)}
+                      type="button"
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+                <div className="all-task-list compact-task-list">
+                  {visibleProjectTasks.map((item) => (
+                    <TaskListRow
+                      activeWorkTaskId={activeWorkTaskId}
+                      key={item.id}
+                      onOpen={openFavoriteTask}
+                      onToggleFavorite={toggleTaskFavorite}
+                      projectLabel={projects[item.projectId].name}
+                      task={item}
+                    />
+                  ))}
+                  {visibleProjectTasks.length === 0 && <p className="empty compact-empty">No tasks match this view.</p>}
+                </div>
+              </>
+            )}
+          </details>
+
           <section className="panel">
             <h2>
               <Smartphone size={18} />
@@ -2400,7 +2814,7 @@ function App() {
                   <label>
                     Output template
                     <select value={selectedOutputTemplate.id} onChange={(event) => selectOutputTemplate(event.target.value)}>
-                      {availableOutputTemplates.map((item) => (
+                      {linkedOutputTemplates.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name}
                         </option>
@@ -2543,6 +2957,42 @@ function App() {
       )}
       </section>
     </main>
+  );
+}
+
+function TaskListRow({
+  activeWorkTaskId,
+  onOpen,
+  onToggleFavorite,
+  projectLabel,
+  task,
+}: {
+  activeWorkTaskId: string;
+  onOpen: (task: WorkTask) => void;
+  onToggleFavorite: (task: WorkTask) => void;
+  projectLabel: string;
+  task: WorkTask;
+}) {
+  return (
+    <article className={`${taskClassName(task, activeWorkTaskId)} task-row`}>
+      <button className="task-row-main" onClick={() => onOpen(task)} type="button">
+        <span>
+          <strong>{task.title}</strong>
+          <small>{projectLabel} - {task.category} - {task.priority} - {task.status}</small>
+          <small>{taskInputQualityStatus(task)}</small>
+        </span>
+        <small>{taskDateLabel(task)}</small>
+      </button>
+      <button
+        aria-label={task.favorite ? `Remove ${task.title} from favorites` : `Add ${task.title} to favorites`}
+        className={task.favorite ? "ghost-button icon-button favorite-toggle active" : "ghost-button icon-button favorite-toggle"}
+        onClick={() => onToggleFavorite(task)}
+        type="button"
+        title={task.favorite ? "Remove favorite" : "Add favorite"}
+      >
+        <Star size={15} />
+      </button>
+    </article>
   );
 }
 
@@ -2698,12 +3148,14 @@ function MobileStatusSection({
   items,
   now,
   onOpen,
+  onToggleFavorite,
   status,
 }: {
   activeWorkTaskId: string;
   items: WorkTask[];
   now: number;
   onOpen: (task: WorkTask, target: "details" | "ai") => void;
+  onToggleFavorite: (task: WorkTask) => void;
   status: TaskStatus;
 }) {
   const defaultOpen = status === "In Progress" || status === "Open" || status === "Blocked";
@@ -2716,28 +3168,64 @@ function MobileStatusSection({
       </summary>
       <div className="mobile-task-list">
         {items.map((item) => (
-          <article key={item.id} className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
-            <div>
-              <strong>{item.title}</strong>
-              <small>{item.category} - {item.priority}</small>
-              <small>{taskDateLabel(item)}</small>
-              {isValidDateTime(item.reminderAt) && <small>{reminderLabel(item, now)}</small>}
-            </div>
-            <div className="mobile-task-actions">
-              <button className="ghost-button" onClick={() => onOpen(item, "details")} type="button">
-                <ListTodo size={15} />
-                Task details
-              </button>
-              <button className="primary-button" onClick={() => onOpen(item, "ai")} type="button">
-                <Sparkles size={15} />
-                AI prompt
-              </button>
-            </div>
-          </article>
+          <MobileTaskCard
+            activeWorkTaskId={activeWorkTaskId}
+            item={item}
+            key={item.id}
+            now={now}
+            onOpen={onOpen}
+            onToggleFavorite={onToggleFavorite}
+          />
         ))}
         {items.length === 0 && <p className="empty compact-empty">No {status.toLowerCase()} tasks.</p>}
       </div>
     </details>
+  );
+}
+
+function MobileTaskCard({
+  activeWorkTaskId,
+  item,
+  now,
+  onOpen,
+  onToggleFavorite,
+}: {
+  activeWorkTaskId: string;
+  item: WorkTask;
+  now: number;
+  onOpen: (task: WorkTask, target: "details" | "ai") => void;
+  onToggleFavorite: (task: WorkTask) => void;
+}) {
+  return (
+    <article className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
+      <div className="mobile-task-card-header">
+        <div>
+          <strong>{item.title}</strong>
+          <small>{projects[item.projectId].name} - {item.category} - {item.priority}</small>
+          <small>{taskDateLabel(item)}</small>
+          {isValidDateTime(item.reminderAt) && <small>{reminderLabel(item, now)}</small>}
+        </div>
+        <button
+          aria-label={item.favorite ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`}
+          className={item.favorite ? "ghost-button icon-button favorite-toggle active" : "ghost-button icon-button favorite-toggle"}
+          onClick={() => onToggleFavorite(item)}
+          type="button"
+          title={item.favorite ? "Remove favorite" : "Add favorite"}
+        >
+          <Star size={15} />
+        </button>
+      </div>
+      <div className="mobile-task-actions">
+        <button className="ghost-button" onClick={() => onOpen(item, "details")} type="button">
+          <ListTodo size={15} />
+          Details
+        </button>
+        <button className="primary-button" onClick={() => onOpen(item, "ai")} type="button">
+          <Sparkles size={15} />
+          AI
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -2790,9 +3278,27 @@ function isOutputTemplateAvailable(template: OutputTemplate, projectId: ProjectI
   return template.scope === "global" || template.scope.includes(projectId);
 }
 
+function isOutputTemplateCompatibleWithTask(template: OutputTemplate, templateId: string) {
+  return template.compatibleTaskIds.length === 0 || template.compatibleTaskIds.includes(templateId);
+}
+
+function compatibleOutputTemplates(templates: OutputTemplate[], templateId: string) {
+  const compatible = templates.filter((template) => isOutputTemplateCompatibleWithTask(template, templateId));
+  return compatible.length ? compatible : templates;
+}
+
+function preferredOutputTemplateForTask(projectId: ProjectId, templateId: string, templates: OutputTemplate[]) {
+  const available = templates.filter((template) => isOutputTemplateAvailable(template, projectId));
+  return compatibleOutputTemplates(available, templateId)[0];
+}
+
 function normalizeOutputTemplates(templates: OutputTemplate[]) {
   const timestamp = new Date().toISOString();
-  const normalized = templates
+  const mergedTemplates = [
+    ...templates,
+    ...defaultOutputTemplates.filter((defaultTemplate) => !templates.some((template) => template.id === defaultTemplate.id)),
+  ];
+  const normalized = mergedTemplates
     .filter((template) => template?.id && template.name)
     .map((template) => ({
       ...template,
@@ -2864,15 +3370,18 @@ function normalizeWorkTask(task: WorkTask): WorkTask {
   const fallbackTemplateId = projects[fallbackProjectId].tasks.some((template) => template.id === migratedTemplateId)
     ? migratedTemplateId
     : projects[fallbackProjectId].tasks[0].id;
-  const fallbackOutputTemplateId = task.outputTemplateId || defaultOutputTemplates[0].id;
-  const fallbackOutputTemplate = defaultOutputTemplates.find((template) => template.id === fallbackOutputTemplateId) ?? defaultOutputTemplates[0];
+  const savedOutputTemplate = defaultOutputTemplates.find((template) => template.id === task.outputTemplateId);
+  const fallbackOutputTemplate =
+    savedOutputTemplate && isOutputTemplateCompatibleWithTask(savedOutputTemplate, fallbackTemplateId)
+      ? savedOutputTemplate
+      : preferredOutputTemplateForTask(fallbackProjectId, fallbackTemplateId, defaultOutputTemplates) ?? defaultOutputTemplates[0];
   const migratedFromLegacyTemplate = migratedTemplateId !== task.templateId;
 
   return {
     ...task,
     projectId: fallbackProjectId,
     templateId: fallbackTemplateId,
-    outputTemplateId: fallbackOutputTemplateId,
+    outputTemplateId: fallbackOutputTemplate.id,
     title: task.title || "Untitled task",
     details: task.details ?? "",
     category: task.category || "General",
@@ -2880,6 +3389,7 @@ function normalizeWorkTask(task: WorkTask): WorkTask {
     dueDate: task.dueDate ?? "",
     reminderAt: task.reminderAt ?? "",
     status: normalizeStatus(task.status),
+    favorite: Boolean(task.favorite),
     statusHistory: task.statusHistory?.length
       ? task.statusHistory.map((entry) => ({ ...entry, status: normalizeStatus(entry.status) }))
       : [{ status: normalizeStatus(task.status), changedAt: task.updatedAt || task.createdAt || new Date().toISOString() }],
@@ -2911,6 +3421,7 @@ function normalizeNote(note: AppNote): AppNote {
     title: note.title || "Untitled note",
     entries,
     pinned: Boolean(note.pinned),
+    favorite: Boolean(note.favorite),
     createdAt: note.createdAt || new Date().toISOString(),
     updatedAt: timestamp,
   };
@@ -3025,7 +3536,7 @@ function buildProjectDashboard(tasks: WorkTask[]) {
   return (Object.keys(projects) as ProjectId[]).map((projectId) => {
     const projectTasks = tasks.filter((task) => task.projectId === projectId);
     const summary = buildTaskSummary(projectTasks);
-    return { projectId, ...summary };
+    return { projectId, favorite: projectTasks.filter((task) => task.favorite).length, ...summary };
   });
 }
 
@@ -3038,11 +3549,20 @@ function buildMobileProjectGroups(tasks: WorkTask[]) {
     return {
       projectId,
       total: projectTasks.length,
+      closed: projectTasks.filter((task) => task.status === "Closed").length,
+      favorite: projectTasks.filter((task) => task.favorite).length,
       byStatus: Object.fromEntries(
         mobileStatusOrder.map((status) => [status, projectTasks.filter((task) => task.status === status)]),
       ) as Record<TaskStatus, WorkTask[]>,
     };
   });
+}
+
+function filterTasksByListMode(tasks: WorkTask[], filter: "Active" | "Favorites" | TaskStatus | "All") {
+  if (filter === "All") return tasks;
+  if (filter === "Active") return tasks.filter((task) => task.status !== "Closed");
+  if (filter === "Favorites") return tasks.filter((task) => task.favorite);
+  return tasks.filter((task) => task.status === filter);
 }
 
 function statusKey(status: TaskStatus): "open" | "inProgress" | "blocked" | "toDoLater" | "closed" {
