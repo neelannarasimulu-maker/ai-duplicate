@@ -1,7 +1,7 @@
 {
-  "name": "AI Workbench",
-  "short_name": "Workbench",
-  "description": "Project work assistant for tasks, reminders, documents, summaries, and email drafts.",
+  "name": "TaskOS AI",
+  "short_name": "TaskOS",
+  "description": "AI-enabled notes and tasks assistant for reminders, documents, summaries, and email drafts.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

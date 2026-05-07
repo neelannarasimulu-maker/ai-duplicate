@@ -1,4 +1,4 @@
-export type ProjectId = "avbob" | "naha" | "personal" | "supplysync360" | "bma" | "thenga";
+export type ProjectId = string;
 export type Format = "Markdown" | "TXT" | "DOCX";
 export type OutputTemplateFormat = Format | "PDF" | "PPTX";
 export type Priority = "Low" | "Normal" | "High" | "Urgent";
@@ -62,6 +62,8 @@ export type WorkTask = {
   priority: Priority;
   dueDate: string;
   reminderAt: string;
+  recurrence?: "None" | "Daily" | "Weekly" | "Monthly" | "Quarterly" | "Yearly";
+  recurrenceNote?: string;
   status: TaskStatus;
   favorite: boolean;
   statusHistory: Array<{
@@ -105,6 +107,7 @@ export type AppNote = {
   title: string;
   content?: string;
   entries: AppNoteEntry[];
+  status?: "Active" | "Closed";
   pinned: boolean;
   favorite: boolean;
   createdAt: string;

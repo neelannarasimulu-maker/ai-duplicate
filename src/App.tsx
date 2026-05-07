@@ -4,6 +4,8 @@ import {
   BarChart3,
   BellRing,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   Check,
   CheckSquare,
   Clipboard,
@@ -11,23 +13,34 @@ import {
   FileImage,
   FileText,
   History,
+  Image,
   LayoutDashboard,
   ListTodo,
+  Maximize2,
+  Minimize2,
   Pin,
   Plus,
+  Repeat,
   Save,
+  ShieldCheck,
   Smartphone,
   Sparkles,
   Star,
+  Settings,
   StickyNote,
   Trash2,
   Upload,
   WandSparkles,
+  X,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { AlignmentType, Document, Footer, Header, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import {
   deleteTask,
+  getCachedMeta,
+  getCachedNotes,
+  getCachedOutputs,
+  getCachedTasks,
   getStorageBackendLabel,
   getMeta,
   getNotes,
@@ -54,6 +67,7 @@ import type {
   TaskStatus,
   WorkTask,
 } from "./types";
+import { Home } from "./components/Home";
 
 type TaskTemplate = {
   id: string;
@@ -290,9 +304,21 @@ const projects: Record<ProjectId, { name: string; context: string; tasks: TaskTe
   },
 };
 
+type ProjectSettings = Record<ProjectId, { name: string; context: string }>;
+
+const defaultProjectSettings: ProjectSettings = Object.fromEntries(
+  (Object.keys(projects) as ProjectId[]).map((id) => [id, { name: projects[id].name, context: projects[id].context }]),
+) as ProjectSettings;
+const defaultTaskTemplates = commonTasks;
+const defaultMasterStatuses = {
+  task: ["Open", "In Progress", "Blocked", "To Do Later", "Closed"] as TaskStatus[],
+  note: ["Active", "Closed"] as Array<"Active" | "Closed">,
+};
+const taskStatuses: TaskStatus[] = defaultMasterStatuses.task;
+
 const seedTimestamp = "2026-04-30T00:00:00.000Z";
 const defaultBrand = {
-  brandName: "AI Workbench",
+  brandName: "TaskOS AI",
   primaryColor: "1f3a5f",
   secondaryColor: "eef3ff",
   accentColor: "3157ff",
@@ -439,7 +465,7 @@ const defaultOutputTemplates: OutputTemplate[] = [
     scope: "global",
     compatibleTaskIds: ["presentation-text"],
     slots: ["Title slide", "Agenda", "Context", "Key message slides", "Recommendation", "Closing action"],
-    style: "Return slide-ready Markdown. For each slide include Slide title, Key message, Bullets, Speaker notes, and Visual direction.",
+    style: "Return strict slide JSON only. Each slide object must include title, layout, background, keyMessage, bullets, speakerNotes, visualDirection, and images.",
     createdAt: seedTimestamp,
     updatedAt: seedTimestamp,
   },
@@ -489,7 +515,7 @@ const defaultOutputTemplates: OutputTemplate[] = [
     scope: "global",
     compatibleTaskIds: ["presentation-text", "strategy-vision", "proposal-copy"],
     slots: ["Title slide", "Agenda", "Context", "Key message slides", "Recommendation", "Closing action"],
-    style: "Use concise slide language, strong key messages, and practical visual direction for each slide.",
+    style: "Return strict slide JSON only. Use concise slide language, strong key messages, and practical visual direction for each slide.",
     createdAt: seedTimestamp,
     updatedAt: seedTimestamp,
   },
@@ -511,7 +537,9 @@ const taskStorageKey = "ai-workbench-work-tasks";
 const reminderStorageKey = "ai-workbench-triggered-reminders";
 const triggeredReminderMetaKey = "triggeredReminderIds";
 const outputTemplateMetaKey = "outputTemplates";
-const taskStatuses: TaskStatus[] = ["Open", "In Progress", "Blocked", "To Do Later", "Closed"];
+const projectSettingsMetaKey = "projectSettings";
+const taskTemplatesMetaKey = "taskTemplates";
+const masterStatusesMetaKey = "masterStatuses";
 const mobileStatusOrder: TaskStatus[] = ["In Progress", "Open", "Blocked", "To Do Later", "Closed"];
 const maxUploadSizeBytes = 8 * 1024 * 1024;
 const maxTextAssetCharacters = 120_000;
@@ -530,11 +558,14 @@ function App() {
   const [result, setResult] = useState("");
   const [savedOutputs, setSavedOutputs] = useState<SavedOutput[]>([]);
   const [outputTemplates, setOutputTemplates] = useState<OutputTemplate[]>(defaultOutputTemplates);
+  const [projectSettings, setProjectSettings] = useState<ProjectSettings>(defaultProjectSettings);
+  const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>(defaultTaskTemplates);
+  const [masterStatuses, setMasterStatuses] = useState(defaultMasterStatuses);
   const [selectedOutputTemplateId, setSelectedOutputTemplateId] = useState(defaultOutputTemplates[0].id);
   const [workTasks, setWorkTasks] = useState<WorkTask[]>([]);
   const [notes, setNotes] = useState<AppNote[]>([]);
   const [activeWorkTaskId, setActiveWorkTaskId] = useState("");
-  const [viewMode, setViewMode] = useState<"home" | "work" | "reminders" | "notes" | "mobile">("home");
+  const [viewMode, setViewMode] = useState<"home" | "work" | "favorites" | "ai" | "reminders" | "notes" | "settings" | "mobile">("home");
   const [quickTaskTitle, setQuickTaskTitle] = useState("");
   const [quickTaskDetails, setQuickTaskDetails] = useState("");
   const [quickChecklistDraft, setQuickChecklistDraft] = useState("");
@@ -543,9 +574,15 @@ function App() {
   const [noteDraft, setNoteDraft] = useState({ title: "", content: "" });
   const [workQuickTaskDraft, setWorkQuickTaskDraft] = useState({ title: "", details: "" });
   const [workQuickNoteDraft, setWorkQuickNoteDraft] = useState({ title: "", content: "" });
+  const [captureTaskOpen, setCaptureTaskOpen] = useState(false);
+  const [captureNoteOpen, setCaptureNoteOpen] = useState(false);
+  const [noteStatusFilter, setNoteStatusFilter] = useState<"Active" | "Closed" | "All">("Active");
+  const [taskBrowserOpen, setTaskBrowserOpen] = useState(true);
   const [mobileFullOpen, setMobileFullOpen] = useState(false);
   const [mobileSection, setMobileSection] = useState<"capture" | "tasks" | "reminders">("tasks");
   const [taskListFilter, setTaskListFilter] = useState<"Active" | "Favorites" | TaskStatus | "All">("Active");
+  const [previewSlideIndex, setPreviewSlideIndex] = useState(0);
+  const [fullScreenPreviewOpen, setFullScreenPreviewOpen] = useState(false);
   const [reminderDrafts, setReminderDrafts] = useState<Record<string, string>>({});
   const [triggeredReminderIds, setTriggeredReminderIds] = useState<string[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() =>
@@ -555,7 +592,15 @@ function App() {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
 
-  const project = projects[projectId];
+  const masterProjects = projectSettings;
+  const masterTaskStatuses = masterStatuses.task.length ? masterStatuses.task : defaultMasterStatuses.task;
+  const masterNoteStatuses = masterStatuses.note.length ? masterStatuses.note : defaultMasterStatuses.note;
+  const projectIds = Object.keys(masterProjects) as ProjectId[];
+  const activeProjectId = masterProjects[projectId] ? projectId : projectIds[0] ?? "avbob";
+  const project = {
+    ...(masterProjects[activeProjectId] ?? defaultProjectSettings.avbob),
+    tasks: taskTemplates.length ? taskTemplates : defaultTaskTemplates,
+  };
   const task = project.tasks.find((item) => item.id === taskId) ?? project.tasks[0];
   const availableOutputTemplates = outputTemplates.filter((item) => isOutputTemplateAvailable(item, projectId));
   const linkedOutputTemplates = compatibleOutputTemplates(availableOutputTemplates, taskId);
@@ -588,7 +633,11 @@ function App() {
     .filter((note) => note.favorite)
     .sort((a, b) => dateValue(b.updatedAt) - dateValue(a.updatedAt))
     .slice(0, 6);
+  const visibleNotes = [...notes]
+    .filter((note) => noteStatusFilter === "All" || (note.status ?? "Active") === noteStatusFilter)
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || dateValue(b.updatedAt) - dateValue(a.updatedAt));
   const visibleProjectTasks = filterTasksByListMode(sortedProjectTasks, taskListFilter);
+  const recurringTasks = sortedProjectTasks.filter((item) => (item.recurrence ?? "None") !== "None");
   const mobileActiveProjectTasks = sortedProjectTasks.filter((item) => item.status !== "Closed");
   const mobileFavoriteProjectTasks = sortedProjectTasks.filter((item) => item.favorite);
   const recentNotes = [...notes].sort((a, b) => dateValue(b.updatedAt) - dateValue(a.updatedAt)).slice(0, 4);
@@ -602,11 +651,32 @@ function App() {
     return missing;
   }, [assets.length, input, requirements.audience, requirements.outputType, requirements.sections]);
   const inputQuality = useMemo(() => buildInputQuality(missingDetails, assets), [assets, missingDetails]);
+  const isPresentationOutput = selectedOutputTemplate.format === "PPTX";
+  const slideDeck = useMemo(() => buildSlideDeck(result, assets, selectedOutputTemplate), [assets, result, selectedOutputTemplate]);
+  const slidePreview = slideDeck.slides;
+  const activePreviewSlideIndex = Math.min(previewSlideIndex, Math.max(slidePreview.length - 1, 0));
+  const activePreviewSlide = slidePreview[activePreviewSlideIndex];
 
   useEffect(() => {
     if (linkedOutputTemplates.some((item) => item.id === selectedOutputTemplateId)) return;
     setSelectedOutputTemplateId(selectedOutputTemplate.id);
   }, [linkedOutputTemplates, selectedOutputTemplate.id, selectedOutputTemplateId]);
+
+  useEffect(() => {
+    if (previewSlideIndex < slidePreview.length) return;
+    setPreviewSlideIndex(Math.max(slidePreview.length - 1, 0));
+  }, [previewSlideIndex, slidePreview.length]);
+
+  useEffect(() => {
+    if (!fullScreenPreviewOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setFullScreenPreviewOpen(false);
+      if (event.key === "ArrowLeft") setPreviewSlideIndex((current) => Math.max(current - 1, 0));
+      if (event.key === "ArrowRight") setPreviewSlideIndex((current) => Math.min(current + 1, Math.max(slidePreview.length - 1, 0)));
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [fullScreenPreviewOpen, slidePreview.length]);
 
   async function refreshData() {
     setSyncing(true);
@@ -628,11 +698,17 @@ function App() {
       const noteResult = await getNotes();
       const triggeredResult = await getMeta<string[]>(triggeredReminderMetaKey, []);
       const outputTemplateResult = await getMeta<OutputTemplate[]>(outputTemplateMetaKey, defaultOutputTemplates);
+      const projectSettingsResult = await getMeta<ProjectSettings>(projectSettingsMetaKey, defaultProjectSettings);
+      const taskTemplatesResult = await getMeta<TaskTemplate[]>(taskTemplatesMetaKey, defaultTaskTemplates);
+      const masterStatusesResult = await getMeta<typeof defaultMasterStatuses>(masterStatusesMetaKey, defaultMasterStatuses);
 
       setWorkTasks(taskResult.map(normalizeWorkTask));
       setNotes(noteResult.map(normalizeNote));
       setSavedOutputs(outputResult);
       setOutputTemplates(normalizeOutputTemplates(outputTemplateResult));
+      setProjectSettings(normalizeProjectSettings(projectSettingsResult));
+      setTaskTemplates(normalizeTaskTemplates(taskTemplatesResult));
+      setMasterStatuses(normalizeMasterStatuses(masterStatusesResult));
       setTriggeredReminderIds(triggeredResult);
       setNow(Date.now());
       setMessage(`Synced ${taskResult.length} tasks, ${noteResult.length} notes, and ${outputResult.length} saved outputs from ${getStorageBackendLabel()}.${outputWarning}`);
@@ -643,22 +719,49 @@ function App() {
     }
   }
 
-  useEffect(() => {
-    void refreshData();
-  }, []);
+  async function loadCachedData() {
+    try {
+      const [
+        taskResult,
+        outputResult,
+        noteResult,
+        triggeredResult,
+        outputTemplateResult,
+        projectSettingsResult,
+        taskTemplatesResult,
+        masterStatusesResult,
+      ] = await Promise.all([
+        getCachedTasks(),
+        getCachedOutputs(),
+        getCachedNotes(),
+        getCachedMeta<string[]>(triggeredReminderMetaKey, []),
+        getCachedMeta<OutputTemplate[]>(outputTemplateMetaKey, defaultOutputTemplates),
+        getCachedMeta<ProjectSettings>(projectSettingsMetaKey, defaultProjectSettings),
+        getCachedMeta<TaskTemplate[]>(taskTemplatesMetaKey, defaultTaskTemplates),
+        getCachedMeta<typeof defaultMasterStatuses>(masterStatusesMetaKey, defaultMasterStatuses),
+      ]);
 
-  useEffect(() => {
-    function refreshWhenVisible() {
-      if (document.visibilityState === "visible") void refreshData();
+      setWorkTasks(taskResult.map(normalizeWorkTask));
+      setNotes(noteResult.map(normalizeNote));
+      setSavedOutputs(outputResult);
+      setOutputTemplates(normalizeOutputTemplates(outputTemplateResult));
+      setProjectSettings(normalizeProjectSettings(projectSettingsResult));
+      setTaskTemplates(normalizeTaskTemplates(taskTemplatesResult));
+      setMasterStatuses(normalizeMasterStatuses(masterStatusesResult));
+      setTriggeredReminderIds(triggeredResult);
+      setNow(Date.now());
+      setMessage(
+        taskResult.length || noteResult.length || outputResult.length
+          ? `Loaded local cache: ${taskResult.length} tasks, ${noteResult.length} notes, and ${outputResult.length} saved outputs. Use Sync to refresh.`
+          : "No local cache found yet. Use Sync to pull your saved data.",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? `Local cache failed: ${error.message}` : "Local cache failed.");
     }
+  }
 
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.addEventListener("focus", refreshWhenVisible);
-
-    return () => {
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.removeEventListener("focus", refreshWhenVisible);
-    };
+  useEffect(() => {
+    void loadCachedData();
   }, []);
 
   useEffect(() => {
@@ -688,7 +791,7 @@ function App() {
 
   function updateProject(nextProjectId: ProjectId) {
     setProjectId(nextProjectId);
-    const nextTaskId = projects[nextProjectId].tasks[0].id;
+    const nextTaskId = taskTemplates[0]?.id ?? defaultTaskTemplates[0].id;
     const nextOutputTemplate = preferredOutputTemplateForTask(nextProjectId, nextTaskId, outputTemplates) ?? defaultOutputTemplates[0];
     setTaskId(nextTaskId);
     setSelectedOutputTemplateId(nextOutputTemplate.id);
@@ -738,6 +841,106 @@ function App() {
     const normalized = normalizeOutputTemplates(nextTemplates);
     setOutputTemplates(normalized);
     void setMeta(outputTemplateMetaKey, normalized);
+  }
+
+  function saveProjectSettings(nextSettings: ProjectSettings) {
+    const normalized = normalizeProjectSettings(nextSettings);
+    setProjectSettings(normalized);
+    void setMeta(projectSettingsMetaKey, normalized);
+  }
+
+  function updateProjectSetting<K extends keyof ProjectSettings[ProjectId]>(id: ProjectId, key: K, value: ProjectSettings[ProjectId][K]) {
+    saveProjectSettings({
+      ...projectSettings,
+      [id]: {
+        ...projectSettings[id],
+        [key]: value,
+      },
+    });
+  }
+
+  function saveTaskTemplates(nextTemplates: TaskTemplate[]) {
+    const normalized = normalizeTaskTemplates(nextTemplates);
+    setTaskTemplates(normalized);
+    void setMeta(taskTemplatesMetaKey, normalized);
+  }
+
+  function updateTaskTemplate(templateId: string, patch: Partial<TaskTemplate>) {
+    saveTaskTemplates(taskTemplates.map((template) => (template.id === templateId ? { ...template, ...patch } : template)));
+  }
+
+  function addProjectSetting() {
+    const id = `project-${Date.now().toString(36)}`;
+    saveProjectSettings({
+      ...projectSettings,
+      [id]: {
+        name: "New Project",
+        context: "",
+      },
+    });
+    setProjectId(id);
+  }
+
+  function deleteProjectSetting(id: ProjectId) {
+    const ids = Object.keys(projectSettings);
+    if (ids.length <= 1) return;
+    const { [id]: _deleted, ...next } = projectSettings;
+    saveProjectSettings(next as ProjectSettings);
+    if (projectId === id) setProjectId(Object.keys(next)[0] ?? "avbob");
+  }
+
+  function addTaskTemplate() {
+    const template: TaskTemplate = {
+      id: `task-${Date.now().toString(36)}`,
+      label: "New task template",
+      description: "",
+      category: "General",
+      requirements: defaultRequirements,
+    };
+    saveTaskTemplates([...taskTemplates, template]);
+  }
+
+  function deleteTaskTemplate(templateId: string) {
+    const nextTemplates = taskTemplates.filter((template) => template.id !== templateId);
+    if (nextTemplates.length) saveTaskTemplates(nextTemplates);
+  }
+
+  function addTaskStatus() {
+    saveMasterStatuses({ ...masterStatuses, task: [...masterTaskStatuses, "Open"] });
+  }
+
+  function deleteTaskStatus(status: TaskStatus) {
+    const nextStatuses = masterTaskStatuses.filter((item) => item !== status);
+    if (nextStatuses.length) saveMasterStatuses({ ...masterStatuses, task: nextStatuses });
+  }
+
+  function addNoteStatus() {
+    saveMasterStatuses({ ...masterStatuses, note: [...masterNoteStatuses, "Active"] });
+  }
+
+  function deleteNoteStatus(status: "Active" | "Closed") {
+    const nextStatuses = masterNoteStatuses.filter((item) => item !== status);
+    if (nextStatuses.length) saveMasterStatuses({ ...masterStatuses, note: nextStatuses });
+  }
+
+  function createOutputTemplate() {
+    const timestamp = new Date().toISOString();
+    const template: OutputTemplate = {
+      ...defaultOutputTemplates[0],
+      id: `output-${Date.now().toString(36)}`,
+      name: "New Output Template",
+      description: "",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    saveOutputTemplates([template, ...outputTemplates]);
+    setSelectedOutputTemplateId(template.id);
+  }
+
+  function saveMasterStatuses(nextStatuses: typeof defaultMasterStatuses) {
+    const normalized = normalizeMasterStatuses(nextStatuses);
+    setMasterStatuses(normalized);
+    void setMeta(masterStatusesMetaKey, normalized);
   }
 
   function updateSelectedOutputTemplate<K extends keyof OutputTemplate>(key: K, value: OutputTemplate[K]) {
@@ -828,6 +1031,7 @@ function App() {
       category: task.category,
     });
     setWorkQuickTaskDraft({ title: "", details: "" });
+    setCaptureTaskOpen(false);
     window.setTimeout(() => {
       document.getElementById("task-details-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
@@ -843,7 +1047,7 @@ function App() {
       title: quickTaskTitle.trim() || "Mobile note",
       details: quickTaskDetails.trim(),
       taskProjectId: projectId,
-      templateId: projects[projectId].tasks[0].id,
+      templateId: taskTemplates[0]?.id ?? defaultTaskTemplates[0].id,
       category: "Mobile",
       checklist: quickChecklistItems,
     });
@@ -894,6 +1098,8 @@ function App() {
       priority: "Normal",
       dueDate: "",
       reminderAt: "",
+      recurrence: "None",
+      recurrenceNote: "",
       status: "Open",
       favorite: false,
       statusHistory: [{ status: "Open", changedAt: new Date().toISOString() }],
@@ -909,7 +1115,7 @@ function App() {
     setWorkTasks((current) => [newTask, ...current]);
     void saveTask(newTask);
     openWorkTask(newTask);
-    setMessage("Work task created. Add dates or reminders if needed.");
+    setMessage("Task created. Add dates or reminders if needed.");
   }
 
   function addChecklistItem() {
@@ -966,6 +1172,7 @@ function App() {
 
   function openWorkTask(item: WorkTask) {
     const normalized = normalizeWorkTask(item);
+    setTaskBrowserOpen(true);
     setActiveWorkTaskId(normalized.id);
     setProjectId(normalized.projectId);
     setTaskId(normalized.templateId);
@@ -986,7 +1193,7 @@ function App() {
 
   function openMobileTask(item: WorkTask, target: "details" | "ai") {
     openWorkTask(item);
-    setViewMode("work");
+    setViewMode(target === "ai" ? "ai" : "work");
     window.setTimeout(() => {
       document.getElementById(target === "details" ? "task-details-section" : "ai-workspace-section")?.scrollIntoView({
         behavior: "smooth",
@@ -1017,15 +1224,13 @@ function App() {
 
   function openCaptureTask() {
     setViewMode("work");
-    window.setTimeout(() => {
-      document.getElementById("quick-create-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
+    setCaptureTaskOpen(true);
   }
 
   function openAiStudio() {
     const studioTask = activeWorkTask ?? sortedProjectTasks.find((item) => item.status !== "Closed") ?? sortedProjectTasks[0];
     if (studioTask) openWorkTask(studioTask);
-    setViewMode("work");
+    setViewMode(studioTask ? "ai" : "work");
     window.setTimeout(() => {
       document.getElementById(studioTask ? "ai-workspace-section" : "quick-create-section")?.scrollIntoView({
         behavior: "smooth",
@@ -1141,6 +1346,7 @@ function App() {
       entries: noteDraft.content.trim()
         ? [{ id: createId(), content: noteDraft.content.trim(), createdAt: timestamp, updatedAt: timestamp }]
         : [],
+      status: "Active",
       pinned: false,
       favorite: false,
       createdAt: timestamp,
@@ -1165,6 +1371,7 @@ function App() {
       entries: workQuickNoteDraft.content.trim()
         ? [{ id: createId(), content: workQuickNoteDraft.content.trim(), createdAt: timestamp, updatedAt: timestamp }]
         : [],
+      status: "Active",
       pinned: false,
       favorite: false,
       createdAt: timestamp,
@@ -1172,6 +1379,7 @@ function App() {
     };
     persistNotes([newNote, ...notes]);
     setWorkQuickNoteDraft({ title: "", content: "" });
+    setCaptureNoteOpen(false);
     setMessage("Quick note saved.");
   }
 
@@ -1325,16 +1533,47 @@ function App() {
     setMessage("Copied result to clipboard.");
   }
 
+  function updateResultValue(value: string) {
+    setResult(value);
+    updateActiveWorkTask("result", value);
+  }
+
+  function replaceSlideJson(index: number, value: string) {
+    try {
+      const nextSlide = normalizeSlideModel(JSON.parse(value), index, assets, selectedOutputTemplate);
+      const nextSlides = slidePreview.map((slide, slideIndex) => (slideIndex === index ? nextSlide : slide));
+      updateResultValue(formatSlideDeckJson(nextSlides));
+      setMessage(`Updated slide ${index + 1} preview from JSON.`);
+    } catch (error) {
+      updateResultValue(value);
+      setMessage(error instanceof Error ? `Slide ${index + 1} JSON is invalid: ${error.message}` : `Slide ${index + 1} JSON is invalid.`);
+    }
+  }
+
+  function addStarterSlideJson() {
+    const slides = slidePreview.length
+      ? slidePreview
+      : [
+          createFallbackSlide(0, selectedOutputTemplate),
+        ];
+    updateResultValue(formatSlideDeckJson(slides));
+    setMessage("Created editable slide JSON. Change any slide JSON to update the preview.");
+  }
+
+  function movePreviewSlide(direction: -1 | 1) {
+    setPreviewSlideIndex((current) => Math.min(Math.max(current + direction, 0), Math.max(slidePreview.length - 1, 0)));
+  }
+
   async function downloadResult(format: OutputTemplateFormat) {
     const extension = format === "Markdown" ? "md" : format.toLowerCase();
-    const templatedResult = applyOutputTemplate(result, selectedOutputTemplate);
+    const templatedResult = format === "PPTX" ? result : applyOutputTemplate(result, selectedOutputTemplate);
     const blob =
       format === "DOCX"
         ? await toDocxBlob(templatedResult, selectedOutputTemplate)
         : format === "PDF"
           ? await toPdfBlob(templatedResult, selectedOutputTemplate)
         : format === "PPTX"
-          ? await toPptxBlob(templatedResult, selectedOutputTemplate)
+          ? await toPptxBlob(templatedResult, selectedOutputTemplate, assets)
         : new Blob([templatedResult], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -1405,8 +1644,8 @@ function App() {
         <div className="brand-mark">
           <span>AI</span>
           <div>
-            <strong>WorkOS</strong>
-            <small>Tasks + notes</small>
+            <strong>TaskOS AI</strong>
+            <small>Notes, tasks, drafts</small>
           </div>
         </div>
         <nav className="rail-nav">
@@ -1416,7 +1655,15 @@ function App() {
           </button>
           <button className={viewMode === "work" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("work")} type="button">
             <ListTodo size={17} />
-            Work
+            Tasks
+          </button>
+          <button className={viewMode === "favorites" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("favorites")} type="button">
+            <Star size={17} />
+            Favorites
+          </button>
+          <button className={viewMode === "ai" ? "nav-button active" : "nav-button"} onClick={openAiStudio} type="button">
+            <WandSparkles size={17} />
+            AI
           </button>
           <button className={viewMode === "notes" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("notes")} type="button">
             <StickyNote size={17} />
@@ -1426,9 +1673,9 @@ function App() {
             <CalendarClock size={17} />
             Reminders
           </button>
-          <button className={viewMode === "mobile" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("mobile")} type="button">
-            <Smartphone size={17} />
-            Mobile
+          <button className={viewMode === "settings" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("settings")} type="button">
+            <Settings size={17} />
+            Settings
           </button>
         </nav>
         <div className="rail-actions">
@@ -1446,19 +1693,33 @@ function App() {
       <section className="app-main">
       <section className="topbar">
         <div>
-          <p className="eyebrow">AI-powered work command center</p>
-          <h1>{viewMode === "home" ? "Today, tasks, notes, and AI drafts" : "Project work assistant"}</h1>
+          <p className="eyebrow">AI-enabled task command center</p>
+          <h1>{viewMode === "home" ? "Today, tasks, notes, and AI drafts" : "Tasks, notes, and AI drafting"}</h1>
+          <div className="topbar-meta" aria-label="Workspace readiness">
+            <span>
+              <ShieldCheck size={14} />
+              Global-ready UI
+            </span>
+            <span>{getStorageBackendLabel()}</span>
+          </div>
         </div>
         <div className="topbar-actions hero-actions">
           <button className="primary-button" onClick={openCaptureTask} type="button">
             <Plus size={16} />
-            + Capture Task
+            Capture task
           </button>
-          <button className="ghost-button ai-action" onClick={openAiStudio} type="button">
+          <button className="ai-action" onClick={openAiStudio} type="button">
             <WandSparkles size={16} />
-            Open AI studio
+            Open AI Studio
           </button>
-          <button className="ghost-button" onClick={() => setViewMode("notes")} type="button">
+          <button
+            className="ghost-button"
+            onClick={() => {
+              setViewMode("notes");
+              setCaptureNoteOpen(true);
+            }}
+            type="button"
+          >
             <Plus size={16} />
             Capture note
           </button>
@@ -1472,229 +1733,67 @@ function App() {
       )}
 
       {viewMode === "home" && (
-        <section className="home-page">
-          <section className="hero-panel">
-            <div>
-              <p className="eyebrow">Live workspace</p>
-              <h2>Move the day forward</h2>
-              <p className="context-copy">
-                A faster launchpad for urgent work, reminders, notes, project status, and AI-ready drafting.
-              </p>
-            </div>
-            <div className="hero-stat-grid">
-              <button className="hero-stat urgent" onClick={() => setViewMode("reminders")} type="button">
-                <strong>{reminderPlanner.overdue.length + reminderPlanner.today.length}</strong>
-                <span>Due now</span>
-              </button>
-              <button className="hero-stat progress" onClick={() => setViewMode("work")} type="button">
-                <strong>{summary.inProgress}</strong>
-                <span>In progress</span>
-              </button>
-              <button className="hero-stat notes" onClick={() => setViewMode("notes")} type="button">
-                <strong>{noteEntryCount}</strong>
-                <span>Note entries</span>
-              </button>
-              <button className="hero-stat ai" onClick={() => setViewMode("work")} type="button">
-                <strong>{savedOutputs.length}</strong>
-                <span>AI outputs</span>
-              </button>
-            </div>
-          </section>
+        <Home
+          activeWorkTaskId={activeWorkTaskId}
+          favoriteNotes={favoriteNotes}
+          favoriteTasks={favoriteTasks}
+          noteEntryCount={noteEntryCount}
+          now={now}
+          openAiStudio={openAiStudio}
+          openFavoriteTask={openFavoriteTask}
+          openHomeProjectDashboard={openHomeProjectDashboard}
+          openNote={openNote}
+          openWorkTask={openWorkTask}
+          projects={projects}
+          recentNotes={recentNotes}
+          reminderPlanner={reminderPlanner}
+          savedOutputs={savedOutputs}
+          setViewMode={setViewMode}
+          summary={summary}
+          toggleTaskFavorite={toggleTaskFavorite}
+          activeFocusTasks={activeFocusTasks}
+          projectDashboard={projectDashboard}
+          projectId={projectId}
+          updateProject={updateProject}
+        />
+      )}
 
-          {(favoriteTasks.length > 0 || favoriteNotes.length > 0) && (
-            <section className="panel favorites-panel">
-              <div className="result-header">
-                <h2>
-                  <Star size={18} />
-                  Favorites
-                </h2>
-                <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
-                  Open work
-                </button>
-              </div>
-              <div className="favorite-grid">
-                {favoriteTasks.map((item) => (
-                  <button className="favorite-card" key={item.id} onClick={() => openFavoriteTask(item)} type="button">
-                    <Star size={15} />
-                    <span>
+      {viewMode === "favorites" && (
+        <section className="favorites-page">
+          <section className="panel favorites-section">
+            <div className="result-header">
+              <h2>
+                <Star size={18} />
+                Favorites
+              </h2>
+              <span className="subtle-count">{favoriteTasks.length + favoriteNotes.length}</span>
+            </div>
+            <div className="favorites-split">
+              <section>
+                <h3>Tasks</h3>
+                <div className="favorite-list">
+                  {favoriteTasks.map((item) => (
+                    <button className="favorite-list-item" key={item.id} onClick={() => openFavoriteTask(item)} type="button">
                       <strong>{item.title}</strong>
-                      <small>{projects[item.projectId].name} - task details</small>
-                    </span>
-                  </button>
-                ))}
-                {favoriteNotes.map((note) => (
-                  <button className="favorite-card note-favorite" key={note.id} onClick={() => openNote(note)} type="button">
-                    <StickyNote size={15} />
-                    <span>
+                      <span>{projects[item.projectId].name} - {item.status}</span>
+                    </button>
+                  ))}
+                  {favoriteTasks.length === 0 && <p className="empty compact-empty">No favorite tasks.</p>}
+                </div>
+              </section>
+              <section>
+                <h3>Notes</h3>
+                <div className="favorite-list">
+                  {favoriteNotes.map((note) => (
+                    <button className="favorite-list-item note-favorite" key={note.id} onClick={() => openNote(note)} type="button">
                       <strong>{note.title}</strong>
-                      <small>{projects[note.projectId].name} - note</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section className="home-grid">
-            <section className="panel focus-panel">
-              <div className="result-header">
-                <h2>
-                  <ListTodo size={18} />
-                  Focus queue
-                </h2>
-                <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
-                  View all
-                </button>
-              </div>
-              <div className="all-task-list">
-                {activeFocusTasks.map((item) => (
-                  <TaskListRow
-                    activeWorkTaskId={activeWorkTaskId}
-                    key={item.id}
-                    onOpen={openFavoriteTask}
-                    onToggleFavorite={toggleTaskFavorite}
-                    projectLabel={projects[item.projectId].name}
-                    task={item}
-                  />
-                ))}
-                {activeFocusTasks.length === 0 && <p className="empty">No active tasks. Lovely clean slate.</p>}
-              </div>
-            </section>
-
-            <section className="panel pulse-panel">
-              <div className="result-header">
-                <h2>
-                  <CalendarClock size={18} />
-                  Today
-                </h2>
-                <button className="ghost-button" onClick={() => setViewMode("reminders")} type="button">
-                  Planner
-                </button>
-              </div>
-              <div className="reminder-list">
-                {[...reminderPlanner.overdue, ...reminderPlanner.today, ...reminderPlanner.tomorrow].slice(0, 5).map((item) => (
-                  <button className={`reminder-title home-reminder ${reminderState(item, now)}`} key={item.id} onClick={() => openWorkTask(item)} type="button">
-                    <strong>{item.title}</strong>
-                    <span>{projects[item.projectId].name} - {reminderLabel(item, now)}</span>
-                  </button>
-                ))}
-                {reminderPlanner.overdue.length + reminderPlanner.today.length + reminderPlanner.tomorrow.length === 0 && <p className="empty">No reminders or due dates due soon.</p>}
-              </div>
-            </section>
-
-            <section className="panel notes-snapshot">
-              <div className="result-header">
-                <h2>
-                  <StickyNote size={18} />
-                  Recent notes
-                </h2>
-                <button className="ghost-button" onClick={() => setViewMode("notes")} type="button">
-                  Open notes
-                </button>
-              </div>
-              <div className="note-snapshot-list">
-                {recentNotes.map((note) => (
-                  <button className="note-snapshot" key={note.id} onClick={() => openNote(note)} type="button">
-                    <span className={`project-chip project-${note.projectId}`}>{projects[note.projectId].name}</span>
-                    <strong>{note.title}</strong>
-                    <small>{note.entries[0]?.content || "No entries yet"}</small>
-                  </button>
-                ))}
-                {recentNotes.length === 0 && <p className="empty">Capture notes and reference information here.</p>}
-              </div>
-            </section>
-
-            <section className="panel ai-panel">
-              <div className="result-header">
-                <h2>
-                  <Sparkles size={18} />
-                  AI studio
-                </h2>
-              </div>
-              <p className="context-copy">Turn task notes, uploaded documents, PowerPoint text, and checklists into document drafts, summaries, reports, and emails.</p>
-              <div className="ai-studio-actions">
-                <button className="primary-button ai-action" onClick={openAiStudio} type="button">
-                  <WandSparkles size={16} />
-                  Prepare prompt
-                </button>
-                <button className="ghost-button" onClick={openHomeProjectDashboard} type="button">
-                  <BarChart3 size={16} />
-                  Project dashboard
-                </button>
-              </div>
-            </section>
-          </section>
-
-          <section className="home-project-dashboard" id="home-project-dashboard">
-            <section className="summary-grid">
-              <div className="summary-card summary-total">
-                <strong>{summary.total}</strong>
-                <span>Total tasks</span>
-              </div>
-              <div className="summary-card summary-open">
-                <strong>{summary.open}</strong>
-                <span>Open</span>
-              </div>
-              <div className="summary-card summary-progress">
-                <strong>{summary.inProgress}</strong>
-                <span>In progress</span>
-              </div>
-              <div className="summary-card summary-blocked">
-                <strong>{summary.blocked}</strong>
-                <span>Blocked</span>
-              </div>
-              <div className="summary-card summary-later">
-                <strong>{summary.toDoLater}</strong>
-                <span>To do later</span>
-              </div>
-              <div className="summary-card summary-urgent">
-                <strong>{summary.urgent}</strong>
-                <span>Urgent</span>
-              </div>
-              <div className="summary-card summary-reminders">
-                <strong>{summary.reminders}</strong>
-                <span>Due reminders</span>
-              </div>
-              <div className="summary-card summary-complete">
-                <strong>{summary.closed}</strong>
-                <span>Closed</span>
-              </div>
-            </section>
-
-            <section className="panel dashboard-panel">
-              <div className="result-header">
-                <h2>
-                  <BarChart3 size={18} />
-                  Project dashboard
-                </h2>
-              </div>
-              <div className="project-dashboard-grid">
-                {projectDashboard.map((item) => (
-                  <button
-                    key={item.projectId}
-                    className={projectId === item.projectId ? "project-dashboard-card active" : "project-dashboard-card"}
-                    onClick={() => {
-                      updateProject(item.projectId);
-                      setViewMode("work");
-                      window.setTimeout(() => {
-                        document.getElementById("quick-create-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }, 80);
-                    }}
-                    type="button"
-                  >
-                    <strong>{projects[item.projectId].name}</strong>
-                    <span>{item.total} tasks</span>
-                    <div className="mini-status-grid">
-                      <small>Open {item.open}</small>
-                      <small>Progress {item.inProgress}</small>
-                      <small>Blocked {item.blocked}</small>
-                      <small>Later {item.toDoLater}</small>
-                      <small>Closed {item.closed}</small>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
+                      <span>{projects[note.projectId].name} - {note.entries.length} entries</span>
+                    </button>
+                  ))}
+                  {favoriteNotes.length === 0 && <p className="empty compact-empty">No favorite notes.</p>}
+                </div>
+              </section>
+            </div>
           </section>
         </section>
       )}
@@ -1790,7 +1889,7 @@ function App() {
             <section className="mobile-overview-panel">
               <div className="mobile-section-header">
                 <div>
-                  <p className="eyebrow">Mobile workspace</p>
+                  <p className="eyebrow">Mobile task workspace</p>
                   <h2>
                     <Smartphone size={18} />
                     Today on mobile
@@ -1998,10 +2097,10 @@ function App() {
             </button>
             {mobileFullOpen && (
               <div className="mobile-full-content">
-                <p className="context-copy">Use the main work area for templates, full task editing, prompts, uploads, output saving, and project history.</p>
+                <p className="context-copy">Use the main task area for templates, full task editing, prompts, uploads, output saving, and project history.</p>
                 <button className="primary-button" onClick={() => setViewMode("work")} type="button">
                   <ArrowRight size={16} />
-                  Go to full work view
+                  Go to full tasks view
                 </button>
                 <button className="ghost-button" onClick={() => setViewMode("reminders")} type="button">
                   <CalendarClock size={16} />
@@ -2020,7 +2119,7 @@ function App() {
               <p className="eyebrow">Reminder planner</p>
               <h2>
                 <CalendarClock size={18} />
-                Plan today and upcoming work
+                Plan today and upcoming tasks
               </h2>
               <p className="context-copy">
                 Review reminders here and enable browser notifications on each device that should alert you.
@@ -2158,47 +2257,25 @@ function App() {
                 <StickyNote size={18} />
                 Important notes
               </h2>
-              <span className="subtle-count">{notes.reduce((total, note) => total + note.entries.length, 0)} entries</span>
+              <div className="notes-toolbar">
+                {(["Active", "Closed", "All"] as const).map((status) => (
+                  <button className={noteStatusFilter === status ? "active" : ""} key={status} onClick={() => setNoteStatusFilter(status)} type="button">
+                    {status}
+                  </button>
+                ))}
+                <button className="primary-button" onClick={() => setCaptureNoteOpen(true)} type="button">
+                  <Plus size={16} />
+                  Capture note
+                </button>
+              </div>
             </div>
-            <div className="note-compose-grid">
-              <label>
-                Project
-                <select value={projectId} onChange={(event) => updateProject(event.target.value as ProjectId)}>
-                  {(Object.keys(projects) as ProjectId[]).map((id) => (
-                    <option key={id} value={id}>
-                      {projects[id].name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Title
-                <input
-                  value={noteDraft.title}
-                  onChange={(event) => setNoteDraft((current) => ({ ...current, title: event.target.value }))}
-                  placeholder="Reference, decision, contact detail..."
-                />
-              </label>
-            </div>
-            <label>
-              Information
-              <textarea
-                className="small-textarea"
-                value={noteDraft.content}
-                onChange={(event) => setNoteDraft((current) => ({ ...current, content: event.target.value }))}
-                placeholder="Store important information that is not yet a task."
-              />
-            </label>
-            <button className="primary-button" onClick={createNote} type="button">
-              <Save size={16} />
-              Save note
-            </button>
+            <p className="context-copy compact-empty">
+              Showing {visibleNotes.length} {noteStatusFilter.toLowerCase()} notes and {notes.reduce((total, note) => total + note.entries.length, 0)} total entries.
+            </p>
           </section>
 
           <section className="notes-grid">
-            {[...notes]
-              .sort((a, b) => Number(b.pinned) - Number(a.pinned) || dateValue(b.updatedAt) - dateValue(a.updatedAt))
-              .map((note) => (
+            {visibleNotes.map((note) => (
                 <article className={`${note.pinned ? "note-card pinned" : "note-card"} ${note.favorite ? "favorite" : ""}`} id={`note-${note.id}`} key={note.id}>
                   <div className="note-card-header">
                     <span className={`project-chip project-${note.projectId}`}>{projects[note.projectId].name}</span>
@@ -2216,6 +2293,13 @@ function App() {
                     value={note.title}
                     onChange={(event) => updateNote(note.id, { title: event.target.value })}
                   />
+                  <label className="note-status-field">
+                    Status
+                    <select value={note.status ?? "Active"} onChange={(event) => updateNote(note.id, { status: event.target.value as AppNote["status"] })}>
+                      <option>Active</option>
+                      <option>Closed</option>
+                    </select>
+                  </label>
                   <div className="note-entry-list">
                     {note.entries.map((entry) => (
                       <div className="note-entry" key={entry.id}>
@@ -2247,12 +2331,170 @@ function App() {
                   </div>
                 </article>
               ))}
-            {notes.length === 0 && <p className="empty">Save useful reference information here. Notes sync with the same database as your tasks.</p>}
+            {visibleNotes.length === 0 && <p className="empty">No {noteStatusFilter.toLowerCase()} notes to show.</p>}
           </section>
         </section>
       )}
 
-      {viewMode === "work" && (
+      {viewMode === "settings" && (
+        <section className="settings-page">
+          <section className="panel">
+            <div className="result-header">
+              <h2>
+                <Settings size={18} />
+                Master settings
+              </h2>
+              <button className="ghost-button" onClick={() => saveProjectSettings(defaultProjectSettings)} type="button">
+                Reset projects
+              </button>
+              <button className="primary-button" onClick={addProjectSetting} type="button">
+                <Plus size={16} />
+                Add project
+              </button>
+            </div>
+            <p className="context-copy">
+              Maintain project names, global task templates, statuses, and output templates here. App screens read these master values.
+            </p>
+          </section>
+
+          <section className="panel settings-section">
+            <h2>Projects</h2>
+            <div className="settings-grid">
+              {(Object.keys(masterProjects) as ProjectId[]).map((id) => (
+                <article className="settings-card" key={id}>
+                  <span className="project-chip">{id}</span>
+                  <label>
+                    Project name
+                    <input value={masterProjects[id].name} onChange={(event) => updateProjectSetting(id, "name", event.target.value)} />
+                  </label>
+                  <label>
+                    Context
+                    <textarea className="small-textarea" value={masterProjects[id].context} onChange={(event) => updateProjectSetting(id, "context", event.target.value)} />
+                  </label>
+                  <button className="danger-button" disabled={projectIds.length <= 1} onClick={() => deleteProjectSetting(id)} type="button">
+                    <Trash2 size={15} />
+                    Delete project
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel settings-section">
+            <div className="result-header">
+              <h2>Task templates</h2>
+              <button className="primary-button" onClick={addTaskTemplate} type="button">
+                <Plus size={16} />
+                Add task template
+              </button>
+            </div>
+            <div className="settings-list">
+              {taskTemplates.map((template) => (
+                <article className="settings-template-row" key={template.id}>
+                  <strong>{template.id}</strong>
+                  <input value={template.label} onChange={(event) => updateTaskTemplate(template.id, { label: event.target.value })} />
+                  <input value={template.category} onChange={(event) => updateTaskTemplate(template.id, { category: event.target.value })} />
+                  <textarea className="small-textarea" value={template.description} onChange={(event) => updateTaskTemplate(template.id, { description: event.target.value })} />
+                  <button className="danger-button icon-button" disabled={taskTemplates.length <= 1} onClick={() => deleteTaskTemplate(template.id)} type="button" title="Delete task template">
+                    <Trash2 size={15} />
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel settings-section">
+            <h2>Statuses</h2>
+            <div className="settings-status-grid">
+              <section>
+                <div className="result-header">
+                  <h3>Task statuses</h3>
+                  <button className="ghost-button" onClick={addTaskStatus} type="button"><Plus size={15} />Add</button>
+                </div>
+                <div className="settings-list">
+                  {masterTaskStatuses.map((status, index) => (
+                    <div className="settings-status-row" key={`${status}-${index}`}>
+                      <input
+                        value={status}
+                        onChange={(event) => {
+                          const next = [...masterTaskStatuses];
+                          next[index] = event.target.value as TaskStatus;
+                          saveMasterStatuses({ ...masterStatuses, task: next });
+                        }}
+                      />
+                      <button className="danger-button icon-button" disabled={masterTaskStatuses.length <= 1} onClick={() => deleteTaskStatus(status)} type="button"><Trash2 size={15} /></button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <div className="result-header">
+                  <h3>Note statuses</h3>
+                  <button className="ghost-button" onClick={addNoteStatus} type="button"><Plus size={15} />Add</button>
+                </div>
+                <div className="settings-list">
+                  {masterNoteStatuses.map((status, index) => (
+                    <div className="settings-status-row" key={`${status}-${index}`}>
+                      <input
+                        value={status}
+                        onChange={(event) => {
+                          const next = [...masterNoteStatuses];
+                          next[index] = event.target.value as "Active" | "Closed";
+                          saveMasterStatuses({ ...masterStatuses, note: next });
+                        }}
+                      />
+                      <button className="danger-button icon-button" disabled={masterNoteStatuses.length <= 1} onClick={() => deleteNoteStatus(status)} type="button"><Trash2 size={15} /></button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section className="panel settings-section">
+            <div className="result-header">
+              <h2>Output templates</h2>
+              <div className="template-actions">
+                <button className="primary-button" onClick={createOutputTemplate} type="button"><Plus size={15} />Add output template</button>
+                <button className="ghost-button" onClick={resetOutputTemplates} type="button">Reset defaults</button>
+              </div>
+            </div>
+            <div className="settings-list">
+              {outputTemplates.map((template) => (
+                <article className="settings-output-row" key={template.id}>
+                  <strong>{template.id}</strong>
+                  <input value={template.name} onChange={(event) => saveOutputTemplates(outputTemplates.map((item) => item.id === template.id ? { ...item, name: event.target.value, updatedAt: new Date().toISOString() } : item))} />
+                  <input value={template.group} onChange={(event) => saveOutputTemplates(outputTemplates.map((item) => item.id === template.id ? { ...item, group: event.target.value, updatedAt: new Date().toISOString() } : item))} />
+                  <select value={template.format} onChange={(event) => saveOutputTemplates(outputTemplates.map((item) => item.id === template.id ? { ...item, format: event.target.value as OutputTemplateFormat, updatedAt: new Date().toISOString() } : item))}>
+                    <option>Markdown</option>
+                    <option>TXT</option>
+                    <option>DOCX</option>
+                    <option>PDF</option>
+                    <option>PPTX</option>
+                  </select>
+                  <textarea className="small-textarea" value={template.description} onChange={(event) => saveOutputTemplates(outputTemplates.map((item) => item.id === template.id ? { ...item, description: event.target.value, updatedAt: new Date().toISOString() } : item))} />
+                  <button
+                    className="ghost-button icon-button"
+                    onClick={() => {
+                      const timestamp = new Date().toISOString();
+                      const copy = { ...template, id: createId(), name: `${template.name} copy`, createdAt: timestamp, updatedAt: timestamp };
+                      saveOutputTemplates([copy, ...outputTemplates]);
+                      setSelectedOutputTemplateId(copy.id);
+                    }}
+                    type="button"
+                    title="Duplicate output template"
+                  >
+                    <Plus size={15} />
+                  </button>
+                  <button className="danger-button icon-button" disabled={outputTemplates.length <= 1} onClick={() => deleteOutputTemplate(template.id)} type="button" title="Delete output template"><Trash2 size={15} /></button>
+                </article>
+              ))}
+            </div>
+          </section>
+        </section>
+      )}
+
+      {(viewMode === "work" || viewMode === "ai") && (
         <>
 
       <section className="workflow">
@@ -2260,12 +2502,13 @@ function App() {
         <ArrowRight size={16} />
         <div className="step done">Open task</div>
         <ArrowRight size={16} />
-        <div className="step">Save details</div>
+        <div className={viewMode === "work" ? "step done" : "step"}>Save details</div>
         <ArrowRight size={16} />
-        <div className="step">Optional AI mode</div>
+        <div className={viewMode === "ai" ? "step done" : "step"}>AI mode</div>
       </section>
 
-      <div className="layout">
+      <div className={viewMode === "ai" || viewMode === "work" ? "layout ai-layout" : "layout"}>
+        {false && viewMode === "work" && (
         <aside className="sidebar">
           <section className="panel">
             <h2>
@@ -2456,123 +2699,111 @@ function App() {
             </div>
           </details>
 
-          <section className="panel history-panel">
-            <h2>
-              <History size={18} />
-              Project history
-            </h2>
-            {projectHistory.length === 0 ? (
-              <p className="empty">Saved outputs for {project.name} will appear here.</p>
-            ) : (
-              <div className="history-list">
-                {projectHistory.map((saved) => (
-                  <button key={saved.id} className="history-item" onClick={() => loadSaved(saved)} type="button">
-                    <strong>{saved.title}</strong>
-                    <span>{new Date(saved.createdAt).toLocaleDateString()}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
         </aside>
+        )}
 
         <section className="work-area">
-          <section className="panel quick-create-panel" id="quick-create-section">
+          {viewMode === "ai" && activeWorkTask && (
+            <section className="panel ai-task-link">
+              <div>
+                <p className="eyebrow">AI linked to task</p>
+                <h2>{activeWorkTask.title}</h2>
+                <p className="context-copy">{project.name} - {activeWorkTask.category} - {activeWorkTask.status}</p>
+              </div>
+              <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
+                <ListTodo size={16} />
+                Back to task
+              </button>
+            </section>
+          )}
+
+          {viewMode === "ai" && !activeWorkTask && (
+            <section className="panel">
+              <p className="empty">Select a task first, then open AI Studio for that task.</p>
+              <button className="primary-button" onClick={() => setViewMode("work")} type="button">
+                <ListTodo size={16} />
+                View tasks
+              </button>
+            </section>
+          )}
+
+          {viewMode === "work" && (
+          <>
+          <section className="panel task-top-panel">
             <div className="result-header">
               <h2>
-                <Plus size={18} />
-                Quick create
+                <BarChart3 size={18} />
+                {project.name} status
               </h2>
-              <span className="subtle-count">{project.name}</span>
+              <span className="subtle-count">{sortedProjectTasks.length}</span>
             </div>
-            <div className="quick-create-grid">
-              <section className="quick-create-card">
-                <div className="quick-create-card-header">
-                  <h3>
-                    <ListTodo size={17} />
-                    Task
-                  </h3>
-                  <span>{selectedOutputTemplate.name}</span>
-                </div>
-                <div className="quick-create-template-row">
-                <label>
-                  Template
-                  <select value={taskId} onChange={(event) => selectTemplate(event.target.value)}>
-                    {project.tasks.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Output
-                  <select value={selectedOutputTemplate.id} onChange={(event) => selectOutputTemplate(event.target.value)}>
-                    {linkedOutputTemplates.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                </div>
-                <label>
-                  Title
-                  <input
-                    value={workQuickTaskDraft.title}
-                    onChange={(event) => setWorkQuickTaskDraft((current) => ({ ...current, title: event.target.value }))}
-                    placeholder={task.label}
-                  />
-                </label>
-                <label>
-                  Notes
-                  <textarea
-                    className="small-textarea quick-textarea"
-                    value={workQuickTaskDraft.details}
-                    onChange={(event) => setWorkQuickTaskDraft((current) => ({ ...current, details: event.target.value }))}
-                    placeholder="Add enough context to start the task. You can expand it after creation."
-                  />
-                </label>
-                <button className="primary-button" onClick={createQuickWorkTask} type="button">
-                  <ListTodo size={16} />
-                  Create task
-                </button>
-              </section>
-
-              <section className="quick-create-card note-quick-create">
-                <div className="quick-create-card-header">
-                  <h3>
-                    <StickyNote size={17} />
-                    Note
-                  </h3>
-                  <span>{project.name}</span>
-                </div>
-                <label>
-                  Title
-                  <input
-                    value={workQuickNoteDraft.title}
-                    onChange={(event) => setWorkQuickNoteDraft((current) => ({ ...current, title: event.target.value }))}
-                    placeholder="Decision, contact detail, useful reference..."
-                  />
-                </label>
-                <label>
-                  Detail
-                  <textarea
-                    className="small-textarea quick-textarea"
-                    value={workQuickNoteDraft.content}
-                    onChange={(event) => setWorkQuickNoteDraft((current) => ({ ...current, content: event.target.value }))}
-                    placeholder="Capture the note without leaving the work page."
-                  />
-                </label>
-                <button className="primary-button" onClick={createQuickWorkNote} type="button">
-                  <Save size={16} />
-                  Save note
-                </button>
-              </section>
+            <div className="project-filter-strip" aria-label="Project filters">
+              {(Object.keys(projects) as ProjectId[]).map((id) => {
+                const stats = projectDashboard.find((item) => item.projectId === id);
+                return (
+                  <button className={projectId === id ? "active" : ""} key={id} onClick={() => updateProject(id)} type="button">
+                    <strong>{projects[id].name}</strong>
+                    <span>{stats?.total ?? 0} tasks</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="project-stat-columns task-status-summary">
+              <div className="project-stat-row status-open"><span>Open</span><strong>{selectedProjectStats?.open ?? 0}</strong></div>
+              <div className="project-stat-row status-in-progress"><span>In progress</span><strong>{selectedProjectStats?.inProgress ?? 0}</strong></div>
+              <div className="project-stat-row status-blocked"><span>Blocked</span><strong>{selectedProjectStats?.blocked ?? 0}</strong></div>
+              <div className="project-stat-row status-to-do-later"><span>To do later</span><strong>{selectedProjectStats?.toDoLater ?? 0}</strong></div>
+              <div className="project-stat-row status-closed"><span>Closed</span><strong>{selectedProjectStats?.closed ?? 0}</strong></div>
             </div>
           </section>
 
-          {activeWorkTask ? (
+          {/* Task Browser - Primary */}
+          <details
+            className="panel task-browser-primary"
+            onToggle={(event) => setTaskBrowserOpen(event.currentTarget.open)}
+            open={taskBrowserOpen}
+          >
+            <summary>
+              <span>
+                <ListTodo size={18} />
+                Browse {project.name} tasks
+              </span>
+              <strong>{visibleProjectTasks.length}</strong>
+            </summary>
+            {sortedProjectTasks.length === 0 ? (
+              <p className="empty">Create your first task for {project.name}.</p>
+            ) : (
+              <>
+                <div className="task-list-toolbar" aria-label="Task list filters">
+                  {(["Active", "Favorites", "Open", "In Progress", "Blocked", "To Do Later", "Closed", "All"] as const).map((filter) => (
+                    <button
+                      className={taskListFilter === filter ? "active" : ""}
+                      key={filter}
+                      onClick={() => setTaskListFilter(filter)}
+                      type="button"
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+                <div className="all-task-list compact-task-list primary-task-list">
+                  {visibleProjectTasks.map((item) => (
+                    <TaskListRow
+                      activeWorkTaskId={activeWorkTaskId}
+                      key={item.id}
+                      onOpen={openFavoriteTask}
+                      onToggleFavorite={toggleTaskFavorite}
+                      projectLabel={projects[item.projectId].name}
+                      task={item}
+                    />
+                  ))}
+                  {visibleProjectTasks.length === 0 && <p className="empty">No tasks match this view.</p>}
+                </div>
+              </>
+            )}
+          </details>
+
+          {taskBrowserOpen && activeWorkTask ? (
             <section className="panel" id="task-details-section">
               <div className="result-header">
                 <h2>
@@ -2602,12 +2833,15 @@ function App() {
                 task={activeWorkTask}
                 onChange={updateWorkTask}
                 onReminderChange={updateReminder}
-                onReminderSave={saveReminder}
+  onReminderSave={saveReminder}
+                projects={masterProjects}
+                templates={taskTemplates}
                 reminderValue={reminderValue(activeWorkTask)}
+                statuses={masterTaskStatuses}
                 onTemplateChange={(nextProjectId, nextTemplateId) => {
                   const nextOutputTemplate = preferredOutputTemplateForTask(nextProjectId, nextTemplateId, outputTemplates) ?? selectedOutputTemplate;
                   const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTemplateId), nextOutputTemplate);
-                  const nextTemplate = projects[nextProjectId].tasks.find((item) => item.id === nextTemplateId) ?? projects[nextProjectId].tasks[0];
+                  const nextTemplate = taskTemplates.find((item) => item.id === nextTemplateId) ?? taskTemplates[0] ?? defaultTaskTemplates[0];
                   setTaskId(nextTemplateId);
                   setSelectedOutputTemplateId(nextOutputTemplate.id);
                   setRequirements(nextRequirements);
@@ -2687,13 +2921,16 @@ function App() {
                 Delete selected task
               </button>
             </section>
-          ) : (
+          ) : taskBrowserOpen ? (
             <section className="panel">
               <p className="empty">Select or create a task to expand it into AI mode.</p>
             </section>
+          ) : null}
+
+          </>
           )}
 
-          <details className="panel task-browse-panel" open={sortedProjectTasks.length <= 6}>
+          {false && <details className="panel task-browse-panel" open={sortedProjectTasks.length <= 6}>
             <summary>
               <span>
                 <ListTodo size={18} />
@@ -2732,19 +2969,9 @@ function App() {
                 </div>
               </>
             )}
-          </details>
+          </details>}
 
-          <section className="panel">
-            <h2>
-              <Smartphone size={18} />
-              Mobile capture
-            </h2>
-            <p className="context-copy">
-              Phone notes sync through the configured database when Supabase credentials and tables are ready.
-            </p>
-          </section>
-
-          {activeWorkTask && (
+          {activeWorkTask && viewMode === "ai" && (
             <>
               <section className="panel" id="ai-workspace-section">
                 <h2>
@@ -2906,17 +3133,108 @@ function App() {
                 </div>
                 <p className="context-copy">
                   Export will use {selectedOutputTemplate.name}
-                  {selectedOutputTemplate.sourceTemplateName ? ` with source template ${selectedOutputTemplate.sourceTemplateName}` : ""}. Paste clean ChatGPT content; markdown headings and image placeholders will be converted into formatted output.
+                  {selectedOutputTemplate.sourceTemplateName ? ` with source template ${selectedOutputTemplate.sourceTemplateName}` : ""}. {isPresentationOutput ? "Paste or edit slide JSON; the preview and PPTX export use the same slide model." : "Paste clean ChatGPT content; markdown headings and image placeholders will be converted into formatted output."}
                 </p>
-                <textarea
-                  className="output-textarea"
-                  value={result}
-                  onChange={(event) => {
-                    setResult(event.target.value);
-                    updateActiveWorkTask("result", event.target.value);
-                  }}
-                  placeholder="Paste the answer from ChatGPT Plus here. This is the final output you can save or export."
-                />
+                {!isPresentationOutput && (
+                  <textarea
+                    className="output-textarea"
+                    value={result}
+                    onChange={(event) => updateResultValue(event.target.value)}
+                    placeholder="Paste the answer from ChatGPT Plus here. This is the final output you can save or export."
+                  />
+                )}
+                {isPresentationOutput && (
+                  <div className="builder-workspace">
+                    <section className="slide-json-panel" aria-label="Slide JSON editor">
+                      <div className="builder-toolbar">
+                        <strong>Slide JSON</strong>
+                        <button onClick={addStarterSlideJson} type="button">
+                          <Plus size={16} />
+                          {slidePreview.length ? "Normalize JSON" : "Create JSON"}
+                        </button>
+                      </div>
+                      {slideDeck.error && <p className="json-warning">{slideDeck.error}</p>}
+                      {slidePreview.length ? (
+                        <div className="slide-json-list">
+                          {slidePreview.map((slide, index) => (
+                            <label className="slide-json-editor" key={slide.id}>
+                              <span>Slide {index + 1}</span>
+                              <textarea
+                                value={JSON.stringify(serializeSlideForJson(slide), null, 2)}
+                                onChange={(event) => replaceSlideJson(index, event.target.value)}
+                                spellCheck={false}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <textarea
+                          className="output-textarea"
+                          value={result}
+                          onChange={(event) => updateResultValue(event.target.value)}
+                          placeholder='Paste slide JSON here, for example: { "slides": [{ "title": "Opening", "layout": "title", "background": "#ffffff", "bullets": [], "images": [] }] }'
+                          spellCheck={false}
+                        />
+                      )}
+                    </section>
+                    <section className="slide-preview-panel" aria-label="Slide preview">
+                      <div className="result-header preview-toolbar">
+                        <h3>Preview</h3>
+                        <div className="preview-toolbar-actions">
+                          <span className="subtle-count">{slidePreview.length}</span>
+                          <button disabled={!slidePreview.length} onClick={() => setFullScreenPreviewOpen(true)} type="button">
+                            <Maximize2 size={16} />
+                            Full screen
+                          </button>
+                        </div>
+                      </div>
+                      <div className="slide-preview-grid">
+                        {slidePreview.map((slide, index) => (
+                          <button
+                            className={index === activePreviewSlideIndex ? "slide-preview-item active" : "slide-preview-item"}
+                            key={slide.id}
+                            onClick={() => setPreviewSlideIndex(index)}
+                            type="button"
+                          >
+                            <SlideCanvas slide={slide} slideNumber={index + 1} template={selectedOutputTemplate} />
+                            <SlideMeta slide={slide} />
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                )}
+                {!isPresentationOutput && result && (
+                  <section className="panel slide-preview-panel">
+                    <div className="result-header">
+                      <h3>Slide preview</h3>
+                      <span className="subtle-count">{slidePreview.length}</span>
+                    </div>
+                    <div className="slide-preview-grid">
+                      {slidePreview.map((slide, index) => (
+                        <article className="slide-card" key={`${index}-${slide.title}`}>
+                          <div className="slide-card-title">
+                            <strong>{slide.title}</strong>
+                            <span>Slide {index + 1}</span>
+                          </div>
+                          {slide.bullets.length > 0 && (
+                            <ul className="slide-card-bullets">
+                              {slide.bullets.slice(0, 4).map((line, lineIndex) => (
+                                <li key={lineIndex}>{line}</li>
+                              ))}
+                            </ul>
+                          )}
+                          {slide.speakerNotes && <p className="slide-card-notes"><strong>Notes:</strong> {slide.speakerNotes}</p>}
+                          {slide.images.length > 0 && (
+                            <p className="slide-card-images">
+                              <strong>Images:</strong> {slide.images.map((image) => image.label).join(", ")}
+                            </p>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <div className="export-bar">
                   <button disabled={!result} onClick={copyResult} type="button">
                     <Clipboard size={16} />
@@ -2947,7 +3265,231 @@ function App() {
         </>
       )}
       </section>
+      {captureTaskOpen && (
+        <div className="capture-modal" role="dialog" aria-modal="true" aria-label="Capture task">
+          <section className="capture-dialog">
+            <div className="result-header">
+              <h2>
+                <Plus size={18} />
+                Capture task
+              </h2>
+              <button className="ghost-button icon-button" onClick={() => setCaptureTaskOpen(false)} type="button" title="Close capture task">
+                <X size={17} />
+              </button>
+            </div>
+            <div className="form-grid compact-grid">
+              <label>
+                Project
+                <select value={projectId} onChange={(event) => updateProject(event.target.value as ProjectId)}>
+                  {(Object.keys(projects) as ProjectId[]).map((id) => (
+                    <option key={id} value={id}>
+                      {projects[id].name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Task type
+                <select value={taskId} onChange={(event) => selectTemplate(event.target.value)}>
+                  {project.tasks.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label>
+              Title
+              <input
+                autoFocus
+                value={workQuickTaskDraft.title}
+                onChange={(event) => setWorkQuickTaskDraft((current) => ({ ...current, title: event.target.value }))}
+                placeholder={task.label}
+              />
+            </label>
+            <label>
+              Details
+              <textarea
+                className="small-textarea"
+                value={workQuickTaskDraft.details}
+                onChange={(event) => setWorkQuickTaskDraft((current) => ({ ...current, details: event.target.value }))}
+                placeholder="Add context, notes, links, or the outcome you need."
+              />
+            </label>
+            <div className="export-bar">
+              <button className="primary-button" onClick={createQuickWorkTask} type="button">
+                <ListTodo size={16} />
+                Create task
+              </button>
+              <button className="ghost-button" onClick={() => setCaptureTaskOpen(false)} type="button">
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {captureNoteOpen && (
+        <div className="capture-modal" role="dialog" aria-modal="true" aria-label="Capture note">
+          <section className="capture-dialog">
+            <div className="result-header">
+              <h2>
+                <StickyNote size={18} />
+                Capture note
+              </h2>
+              <button className="ghost-button icon-button" onClick={() => setCaptureNoteOpen(false)} type="button" title="Close capture note">
+                <X size={17} />
+              </button>
+            </div>
+            <div className="form-grid compact-grid">
+              <label>
+                Project
+                <select value={projectId} onChange={(event) => updateProject(event.target.value as ProjectId)}>
+                  {(Object.keys(projects) as ProjectId[]).map((id) => (
+                    <option key={id} value={id}>
+                      {projects[id].name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Status
+                <select defaultValue="Active" disabled>
+                  <option>Active</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              Title
+              <input
+                autoFocus
+                value={workQuickNoteDraft.title}
+                onChange={(event) => setWorkQuickNoteDraft((current) => ({ ...current, title: event.target.value }))}
+                placeholder="Reference, decision, contact detail..."
+              />
+            </label>
+            <label>
+              Information
+              <textarea
+                className="small-textarea"
+                value={workQuickNoteDraft.content}
+                onChange={(event) => setWorkQuickNoteDraft((current) => ({ ...current, content: event.target.value }))}
+                placeholder="Store important information that is not yet a task."
+              />
+            </label>
+            <div className="export-bar">
+              <button className="primary-button" onClick={createQuickWorkNote} type="button">
+                <Save size={16} />
+                Save note
+              </button>
+              <button className="ghost-button" onClick={() => setCaptureNoteOpen(false)} type="button">
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {fullScreenPreviewOpen && activePreviewSlide && (
+        <div className="preview-modal" role="dialog" aria-modal="true" aria-label="Full screen slide preview">
+          <div className="preview-modal-header">
+            <div>
+              <span>Slide {activePreviewSlideIndex + 1} of {slidePreview.length}</span>
+              <strong>{activePreviewSlide.title}</strong>
+            </div>
+            <div className="preview-modal-actions">
+              <button disabled={activePreviewSlideIndex === 0} onClick={() => movePreviewSlide(-1)} type="button" title="Previous slide">
+                <ChevronLeft size={17} />
+              </button>
+              <button disabled={activePreviewSlideIndex >= slidePreview.length - 1} onClick={() => movePreviewSlide(1)} type="button" title="Next slide">
+                <ChevronRight size={17} />
+              </button>
+              <button onClick={() => setFullScreenPreviewOpen(false)} type="button">
+                <Minimize2 size={16} />
+                Exit
+              </button>
+              <button onClick={() => setFullScreenPreviewOpen(false)} type="button" title="Close full screen preview">
+                <X size={17} />
+              </button>
+            </div>
+          </div>
+          <div className="preview-modal-stage">
+            <SlideCanvas isFullScreen slide={activePreviewSlide} slideNumber={activePreviewSlideIndex + 1} template={selectedOutputTemplate} />
+          </div>
+          <div className="preview-modal-meta">
+            <SlideMeta slide={activePreviewSlide} />
+          </div>
+        </div>
+      )}
     </main>
+  );
+}
+
+function SlideCanvas({
+  isFullScreen = false,
+  slide,
+  slideNumber,
+  template,
+}: {
+  isFullScreen?: boolean;
+  slide: SlideModel;
+  slideNumber: number;
+  template: OutputTemplate;
+}) {
+  return (
+    <article
+      className={`slide-canvas slide-layout-${slide.layout}${isFullScreen ? " full-screen-slide" : ""}`}
+      style={{ background: slide.background }}
+    >
+      <div className="slide-brand-strip" style={{ backgroundColor: `#${template.primaryColor}` }} />
+      <header className="slide-canvas-header">
+        <div>
+          <span>Slide {slideNumber} / {slide.layout}</span>
+          <h4>{slide.title}</h4>
+        </div>
+        {template.logoDataUrl ? (
+          <img alt={brandedTitle(template)} src={template.logoDataUrl} />
+        ) : (
+          <strong>{brandedTitle(template)}</strong>
+        )}
+      </header>
+      <div className="slide-canvas-body">
+        <div className="slide-copy">
+          {slide.keyMessage && <p className="slide-key-message">{slide.keyMessage}</p>}
+          {slide.bullets.length > 0 && (
+            <ul>
+              {slide.bullets.slice(0, 5).map((line, lineIndex) => (
+                <li key={lineIndex}>{line}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="slide-visual">
+          {slide.imageAssets[0] ? (
+            <img alt={slide.images[0]?.alt || slide.images[0]?.label || "Slide visual"} src={slide.imageAssets[0].content} />
+          ) : (
+            <div className="slide-visual-placeholder">
+              <Image size={22} />
+              <span>{slide.images[0]?.label || slide.visualDirection || "Visual direction"}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <footer className="slide-canvas-footer">
+        <span>{brandedTitle(template)}</span>
+        <span>{slideNumber}</span>
+      </footer>
+    </article>
+  );
+}
+
+function SlideMeta({ slide }: { slide: SlideModel }) {
+  return (
+    <div className="slide-meta">
+      <span>{slide.background}</span>
+      <span>{slide.layout}</span>
+      <span>{slide.images.length ? `Images: ${slide.images.map((image) => image.label).join(", ")}` : "No images"}</span>
+      <span>{slide.speakerNotes ? `Notes: ${slide.speakerNotes}` : "No speaker notes"}</span>
+    </div>
   );
 }
 
@@ -2967,12 +3509,13 @@ function TaskListRow({
   return (
     <article className={`${taskClassName(task, activeWorkTaskId)} task-row`}>
       <button className="task-row-main" onClick={() => onOpen(task)} type="button">
-        <span>
+        <span className="task-row-title">
           <strong>{task.title}</strong>
-          <small>{projectLabel} - {task.category} - {task.priority} - {task.status}</small>
-          <small>{taskInputQualityStatus(task)}</small>
         </span>
-        <small>{taskDateLabel(task)}</small>
+        <span className={`status-pill status-${statusSlug(task.status)}`}>{task.status}</span>
+        <small>{task.category}</small>
+        <small>{task.priority}</small>
+        <small>{task.recurrence && task.recurrence !== "None" ? task.recurrence : taskDateLabel(task)}</small>
       </button>
       <button
         aria-label={task.favorite ? `Remove ${task.title} from favorites` : `Add ${task.title} to favorites`}
@@ -2993,16 +3536,22 @@ function TaskEditor({
   onReminderChange,
   onReminderSave,
   onTemplateChange,
+  projects,
   reminderValue,
+  statuses,
+  templates,
 }: {
   task: WorkTask;
   onChange: <K extends keyof WorkTask>(id: string, key: K, value: WorkTask[K]) => void;
   onReminderChange: (id: string, value: string) => void;
   onReminderSave: (id: string) => void;
   onTemplateChange: (projectId: ProjectId, templateId: string) => void;
+  projects: ProjectSettings;
   reminderValue: string;
+  statuses: TaskStatus[];
+  templates: TaskTemplate[];
 }) {
-  const availableTemplates = projects[task.projectId].tasks;
+  const availableTemplates = templates.length ? templates : defaultTaskTemplates;
 
   return (
     <div className="task-editor">
@@ -3012,7 +3561,7 @@ function TaskEditor({
           value={task.projectId}
           onChange={(event) => {
             const nextProjectId = event.target.value as ProjectId;
-            const nextTemplateId = projects[nextProjectId].tasks[0].id;
+            const nextTemplateId = availableTemplates[0]?.id ?? defaultTaskTemplates[0].id;
             onChange(task.id, "projectId", nextProjectId);
             onTemplateChange(nextProjectId, nextTemplateId);
           }}
@@ -3066,9 +3615,28 @@ function TaskEditor({
         </div>
       </label>
       <label>
+        Recurrence
+        <select value={task.recurrence ?? "None"} onChange={(event) => onChange(task.id, "recurrence", event.target.value as WorkTask["recurrence"])}>
+          <option>None</option>
+          <option>Daily</option>
+          <option>Weekly</option>
+          <option>Monthly</option>
+          <option>Quarterly</option>
+          <option>Yearly</option>
+        </select>
+      </label>
+      <label>
+        Recurrence note
+        <input
+          value={task.recurrenceNote ?? ""}
+          onChange={(event) => onChange(task.id, "recurrenceNote", event.target.value)}
+          placeholder="How this task repeats or what to update"
+        />
+      </label>
+      <label>
         Status
         <select value={task.status} onChange={(event) => onChange(task.id, "status", event.target.value as TaskStatus)}>
-          {taskStatuses.map((status) => (
+          {statuses.map((status) => (
             <option key={status}>{status}</option>
           ))}
         </select>
@@ -3321,6 +3889,44 @@ function normalizeHexColor(value: string | undefined, fallback: string) {
   return /^[0-9a-f]{6}$/i.test(cleaned) ? cleaned : fallback;
 }
 
+function normalizeProjectSettings(settings: ProjectSettings): ProjectSettings {
+  const next = {} as ProjectSettings;
+  const ids = Array.from(new Set([...Object.keys(defaultProjectSettings), ...Object.keys(settings ?? {})])) as ProjectId[];
+  for (const id of ids) {
+    const project = settings?.[id] ?? defaultProjectSettings[id];
+    if (!project) continue;
+    next[id] = {
+      name: project.name || defaultProjectSettings[id]?.name || id,
+      context: project.context ?? defaultProjectSettings[id]?.context ?? "",
+    };
+  }
+  return Object.keys(next).length ? next : defaultProjectSettings;
+}
+
+function normalizeTaskTemplates(templates: TaskTemplate[]) {
+  const normalized = (Array.isArray(templates) ? templates : [])
+    .filter((template) => template?.id)
+    .map((template, index) => {
+      const fallback = defaultTaskTemplates[index % defaultTaskTemplates.length];
+      return {
+        ...fallback,
+        ...template,
+        label: template.label || fallback.label,
+        category: template.category || fallback.category,
+        description: template.description ?? "",
+        requirements: template.requirements ?? fallback.requirements,
+      };
+    });
+  return normalized.length ? normalized : defaultTaskTemplates;
+}
+
+function normalizeMasterStatuses(statuses: typeof defaultMasterStatuses) {
+  return {
+    task: statuses?.task?.length ? statuses.task : defaultMasterStatuses.task,
+    note: statuses?.note?.length ? statuses.note : defaultMasterStatuses.note,
+  };
+}
+
 function normalizeOutputTemplateFormat(format: OutputTemplate["format"]): OutputTemplateFormat {
   return format === "TXT" || format === "DOCX" || format === "PDF" || format === "PPTX" ? format : "Markdown";
 }
@@ -3379,6 +3985,8 @@ function normalizeWorkTask(task: WorkTask): WorkTask {
     priority: task.priority || "Normal",
     dueDate: task.dueDate ?? "",
     reminderAt: task.reminderAt ?? "",
+    recurrence: task.recurrence ?? "None",
+    recurrenceNote: task.recurrenceNote ?? "",
     status: normalizeStatus(task.status),
     favorite: Boolean(task.favorite),
     statusHistory: task.statusHistory?.length
@@ -3411,6 +4019,7 @@ function normalizeNote(note: AppNote): AppNote {
     projectId: fallbackProjectId,
     title: note.title || "Untitled note",
     entries,
+    status: note.status === "Closed" ? "Closed" : "Active",
     pinned: Boolean(note.pinned),
     favorite: Boolean(note.favorite),
     createdAt: note.createdAt || new Date().toISOString(),
@@ -3819,7 +4428,7 @@ function buildFullLlmPrompt(
   ].filter(Boolean);
 
   return [
-    "You are a practical AI work assistant. Process the full source material and create a new output document.",
+    "You are a practical AI tasks and notes assistant. Process the full source material and create a new output document.",
     "I am using ChatGPT Plus manually, so produce the final answer directly in this chat.",
     "",
     "INTENT BRIEF",
@@ -3888,9 +4497,10 @@ function buildFullLlmPrompt(
     "INSTRUCTIONS",
     "Create the requested output as a new, business-ready document, summary, or email draft according to the selected output type.",
     "Map the answer to the output template slots and any placeholders found in the maintained source template.",
-    "Return clean Markdown only. Do not wrap the answer in code fences. Do not include XML, HTML, template metadata, or commentary about how the answer was created.",
-    "For image needs, insert explicit placeholders in this format: [IMAGE PLACEHOLDER: short description | suggested source or visual direction].",
-    "If the selected output template is a presentation, return slide-by-slide Markdown. Each slide must include Slide title, Key message, Bullets, Speaker notes, Visual direction, and Image placeholders where useful.",
+    outputTemplate.format === "PPTX"
+      ? "For presentations, return strict JSON only with this shape: { \"slides\": [{ \"id\": \"slide-1\", \"title\": \"\", \"layout\": \"title|section|content|two-column|image-left|image-right|image-full\", \"background\": \"#ffffff\", \"keyMessage\": \"\", \"bullets\": [], \"speakerNotes\": \"\", \"visualDirection\": \"\", \"images\": [{ \"label\": \"\", \"source\": \"matching uploaded file name or visual source\", \"alt\": \"\" }] }] }. Do not wrap the JSON in code fences."
+      : "Return clean Markdown only. Do not wrap the answer in code fences. Do not include XML, HTML, template metadata, or commentary about how the answer was created.",
+    "For image needs, presentations must use the images array; other outputs may use explicit placeholders in this format: [IMAGE PLACEHOLDER: short description | suggested source or visual direction].",
     "If the selected output template is AI prompt generator, return a clean reusable prompt block with no surrounding commentary.",
     "If the requested output is an email, include a usable subject line and email body.",
     "If the requested output is a summary, distinguish confirmed information, assumptions, risks, gaps, and action items.",
@@ -3903,6 +4513,33 @@ type MarkdownBlock = {
   type: "heading" | "bullet" | "numbered" | "paragraph";
   level: number;
   text: string;
+};
+
+type SlideLayout = "title" | "section" | "content" | "two-column" | "image-left" | "image-right" | "image-full";
+
+type SlideImageModel = {
+  label: string;
+  source: string;
+  alt: string;
+};
+
+type SlideModel = {
+  id: string;
+  title: string;
+  layout: SlideLayout;
+  background: string;
+  keyMessage: string;
+  bullets: string[];
+  speakerNotes: string;
+  visualDirection: string;
+  images: SlideImageModel[];
+  imageAssets: InputAsset[];
+  raw: string;
+};
+
+type SlideDeckBuild = {
+  slides: SlideModel[];
+  error: string;
 };
 
 function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
@@ -4073,79 +4710,6 @@ async function toPdfBlob(markdown: string, template: OutputTemplate) {
   return pdf.output("blob");
 }
 
-async function toPptxBlob(markdown: string, template: OutputTemplate) {
-  const { default: PptxGenJS } = await import("pptxgenjs");
-  const pptx = new PptxGenJS();
-  pptx.layout = "LAYOUT_WIDE";
-  pptx.author = brandedTitle(template);
-  pptx.subject = template.name;
-  pptx.theme = {
-    headFontFace: "Aptos Display",
-    bodyFontFace: "Aptos",
-  };
-
-  const slides = splitMarkdownIntoSlides(markdown);
-  slides.forEach((slideContent, index) => {
-    const slide = pptx.addSlide();
-    slide.background = { color: "FFFFFF" };
-    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 0.12, fill: { color: template.primaryColor }, line: { color: template.primaryColor } });
-    if (template.logoDataUrl) {
-      slide.addImage({ data: template.logoDataUrl, x: 11.2, y: 0.25, w: 1.55, h: 0.55 });
-    } else {
-      slide.addText(brandedTitle(template), { x: 10.25, y: 0.3, w: 2.5, h: 0.25, fontSize: 8, bold: true, color: template.primaryColor, align: "right" });
-    }
-
-    const blocks = parseMarkdownBlocks(slideContent).filter((block) => block.text);
-    const title = blocks.find((block) => block.type === "heading")?.text ?? (index === 0 ? template.name : `Slide ${index + 1}`);
-    const body = blocks.filter((block) => block.text !== title).slice(0, 8);
-    const imagePlaceholders = body.filter((block) => /\[?IMAGE PLACEHOLDER:/i.test(block.text));
-    const textBody = body.filter((block) => !/\[?IMAGE PLACEHOLDER:/i.test(block.text));
-    slide.addText(title, { x: 0.65, y: 0.65, w: 11.2, h: 0.55, fontSize: 28, bold: true, color: template.primaryColor, margin: 0 });
-    slide.addShape(pptx.ShapeType.line, { x: 0.65, y: 1.28, w: 2.2, h: 0, line: { color: template.accentColor, width: 2 } });
-
-    const bulletLines = textBody.map((block) => ({
-      text: block.text,
-      options: { bullet: block.type !== "paragraph" ? { type: "bullet" as const } : undefined },
-    }));
-    slide.addText(bulletLines.length ? bulletLines : [{ text: slideContent.replace(/^#+\s*/gm, "").slice(0, 800), options: {} }], {
-      x: 0.8,
-      y: 1.65,
-      w: imagePlaceholders.length ? 7.1 : 11.65,
-      h: 4.75,
-      fontSize: 15,
-      color: "171827",
-      breakLine: false,
-      fit: "shrink",
-      valign: "top",
-    });
-    if (imagePlaceholders.length) {
-      slide.addShape(pptx.ShapeType.rect, {
-        x: 8.25,
-        y: 1.65,
-        w: 4.1,
-        h: 3.1,
-        fill: { color: template.secondaryColor },
-        line: { color: template.accentColor },
-      });
-      slide.addText(imagePlaceholders.map((item) => item.text.replace(/^\[?IMAGE PLACEHOLDER:\s*/i, "").replace(/\]?$/g, "")).join("\n\n"), {
-        x: 8.5,
-        y: 1.95,
-        w: 3.6,
-        h: 2.4,
-        fontSize: 11,
-        color: template.primaryColor,
-        bold: true,
-        fit: "shrink",
-        valign: "middle",
-        align: "center",
-      });
-    }
-    slide.addText(`${brandedTitle(template)} | ${index + 1}`, { x: 0.65, y: 7.05, w: 12, h: 0.22, fontSize: 7, color: "627168", align: "right" });
-  });
-
-  return (await pptx.write({ outputType: "blob" })) as Blob;
-}
-
 function splitMarkdownIntoSlides(markdown: string) {
   const explicitSlides = markdown
     .split(/\n(?=#{1,3}\s+(?:Slide\s+\d+|Title slide|Agenda|Context|Recommendation|Closing action)\b)/i)
@@ -4159,6 +4723,287 @@ function splitMarkdownIntoSlides(markdown: string) {
     chunks.push(blocks.slice(index, index + 7).map((block) => `${block.type === "heading" ? "#" : "-"} ${block.text}`).join("\n"));
   }
   return chunks.length ? chunks : [markdown];
+}
+
+function extractSlideImagePlaceholders(text: string) {
+  const labels = new Set<string>();
+  const markdownImage = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  const namedImage = /\[\[image:\s*([^\]]+)\]\]/gi;
+  const placeholderImage = /\[IMAGE PLACEHOLDER:\s*([^\]]+)\]/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = markdownImage.exec(text))) {
+    labels.add(match[1] || match[2]);
+  }
+  while ((match = namedImage.exec(text))) {
+    labels.add(match[1]);
+  }
+  while ((match = placeholderImage.exec(text))) {
+    labels.add(match[1]);
+  }
+
+  return Array.from(labels).map((item) => item.trim()).filter(Boolean);
+}
+
+function matchAssetForPlaceholder(label: string, assets: InputAsset[]) {
+  const normalizedLabel = label.toLowerCase().trim();
+  if (!normalizedLabel) return undefined;
+  return assets.find((asset) =>
+    asset.type === "image" &&
+    [asset.name, asset.name.replace(/[-_]/g, " ")].some((assetName) =>
+      assetName.toLowerCase().includes(normalizedLabel) || normalizedLabel.includes(assetName.toLowerCase()),
+    ),
+  );
+}
+
+function normalizeSlideLayout(value: unknown, index: number): SlideLayout {
+  const normalized = String(value ?? "").toLowerCase().trim();
+  const validLayouts: SlideLayout[] = ["title", "section", "content", "two-column", "image-left", "image-right", "image-full"];
+  if (validLayouts.includes(normalized as SlideLayout)) return normalized as SlideLayout;
+  if (index === 0) return "title";
+  return "content";
+}
+
+function normalizeBackground(value: unknown, template: OutputTemplate) {
+  const background = String(value ?? "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(background)) return background;
+  if (/^[0-9a-f]{6}$/i.test(background)) return `#${background}`;
+  return `#${template.secondaryColor || "ffffff"}`;
+}
+
+function normalizeStringList(value: unknown) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(/\n|;/).map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function normalizeSlideImages(value: unknown, visualDirection: string) {
+  const items = Array.isArray(value) ? value : value ? [value] : [];
+  const images = items
+    .map((item): SlideImageModel => {
+      if (typeof item === "string") return { label: item.trim(), source: "", alt: item.trim() };
+      const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const label = String(record.label ?? record.description ?? record.name ?? record.placeholder ?? "").trim();
+      const source = String(record.source ?? record.src ?? record.url ?? "").trim();
+      const alt = String(record.alt ?? label).trim();
+      return { label, source, alt };
+    })
+    .filter((item) => item.label || item.source);
+
+  if (!images.length && visualDirection) {
+    return [{ label: visualDirection, source: "", alt: visualDirection }];
+  }
+
+  return images;
+}
+
+function serializeSlideForJson(slide: SlideModel) {
+  return {
+    id: slide.id,
+    title: slide.title,
+    layout: slide.layout,
+    background: slide.background,
+    keyMessage: slide.keyMessage,
+    bullets: slide.bullets,
+    speakerNotes: slide.speakerNotes,
+    visualDirection: slide.visualDirection,
+    images: slide.images,
+  };
+}
+
+function formatSlideDeckJson(slides: SlideModel[]) {
+  return JSON.stringify({ slides: slides.map(serializeSlideForJson) }, null, 2);
+}
+
+function createFallbackSlide(index: number, template: OutputTemplate): SlideModel {
+  return normalizeSlideModel(
+    {
+      id: `slide-${index + 1}`,
+      title: index === 0 ? "Presentation title" : `Slide ${index + 1}`,
+      layout: index === 0 ? "title" : "content",
+      background: `#${template.secondaryColor || "ffffff"}`,
+      keyMessage: "",
+      bullets: [],
+      speakerNotes: "",
+      visualDirection: "",
+      images: [],
+    },
+    index,
+    [],
+    template,
+  );
+}
+
+function normalizeSlideModel(value: unknown, index: number, assets: InputAsset[], template: OutputTemplate): SlideModel {
+  const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const visualDirection = String(record.visualDirection ?? record.visual_direction ?? record.visual ?? "").trim();
+  const images = normalizeSlideImages(record.images ?? record.image ?? record.imagePlaceholders, visualDirection);
+  const imageAssets = images
+    .map((image) => matchAssetForPlaceholder(image.source || image.label, assets))
+    .filter(Boolean) as InputAsset[];
+
+  return {
+    id: String(record.id ?? `slide-${index + 1}`).trim() || `slide-${index + 1}`,
+    title: String(record.title ?? record.slideTitle ?? `Slide ${index + 1}`).trim() || `Slide ${index + 1}`,
+    layout: normalizeSlideLayout(record.layout, index),
+    background: normalizeBackground(record.background, template),
+    keyMessage: String(record.keyMessage ?? record.key_message ?? record.message ?? "").trim(),
+    bullets: normalizeStringList(record.bullets ?? record.bodyLines ?? record.body),
+    speakerNotes: String(record.speakerNotes ?? record.speaker_notes ?? record.notes ?? "").trim(),
+    visualDirection,
+    images,
+    imageAssets,
+    raw: JSON.stringify(record, null, 2),
+  };
+}
+
+function parseSlideDeckJson(input: string, assets: InputAsset[], template: OutputTemplate): SlideDeckBuild {
+  const cleaned = cleanChatGptOutput(input).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  if (!cleaned) return { slides: [], error: "" };
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    const slideValues = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.slides) ? parsed.slides : [];
+    if (!slideValues.length) {
+      return { slides: [], error: "JSON parsed, but no slides array was found." };
+    }
+    return {
+      slides: slideValues.map((slide: unknown, index: number) => normalizeSlideModel(slide, index, assets, template)),
+      error: "",
+    };
+  } catch (error) {
+    return {
+      slides: [],
+      error: error instanceof Error ? `JSON is invalid: ${error.message}` : "JSON is invalid.",
+    };
+  }
+}
+
+function markdownSlideToModel(slideContent: string, index: number, assets: InputAsset[], template: OutputTemplate): SlideModel {
+    const blocks = parseMarkdownBlocks(slideContent).filter((block) => block.text);
+    const title = blocks.find((block) => block.type === "heading")?.text ?? `Slide ${index + 1}`;
+    const notesBlock = blocks.find((block) => /^speaker notes?:/i.test(block.text) || /^notes?:/i.test(block.text));
+    const notes = notesBlock ? notesBlock.text.replace(/^(speaker notes?:|notes?:)\s*/i, "") : "";
+    const imageLabels = extractSlideImagePlaceholders(slideContent);
+    const imageAssets = imageLabels.map((label) => matchAssetForPlaceholder(label, assets)).filter(Boolean) as InputAsset[];
+    const bodyLines = blocks
+      .filter(
+        (block) =>
+          block.type !== "heading" &&
+          !/^speaker notes?:/i.test(block.text) &&
+          !/^notes?:/i.test(block.text),
+      )
+      .map((block) => block.text);
+
+    return {
+      id: `slide-${index + 1}`,
+      title,
+      layout: index === 0 ? "title" : imageAssets.length || imageLabels.length ? "image-right" : "content",
+      background: `#${template.secondaryColor || "ffffff"}`,
+      keyMessage: bodyLines.find((line) => /^key message:/i.test(line))?.replace(/^key message:\s*/i, "") ?? "",
+      bullets: bodyLines.filter((line) => !/^key message:/i.test(line) && !/^visual direction:/i.test(line)),
+      speakerNotes: notes,
+      visualDirection: bodyLines.find((line) => /^visual direction:/i.test(line))?.replace(/^visual direction:\s*/i, "") ?? "",
+      images: imageLabels.map((label) => ({ label, source: "", alt: label })),
+      imageAssets,
+      raw: slideContent,
+    };
+}
+
+function buildSlideDeck(input: string, assets: InputAsset[], template: OutputTemplate): SlideDeckBuild {
+  const trimmed = input.trim();
+  if (!trimmed) return { slides: [], error: "" };
+  if (/^\s*(?:```json\s*)?[\[{]/i.test(trimmed)) return parseSlideDeckJson(trimmed, assets, template);
+
+  return {
+    slides: splitMarkdownIntoSlides(trimmed).map((slideContent, index) => markdownSlideToModel(slideContent, index, assets, template)),
+    error: "This is Markdown, so the preview is using a best-effort conversion. Normalize it to JSON before managing the deck.",
+  };
+}
+
+async function toPptxBlob(markdown: string, template: OutputTemplate, assets: InputAsset[]) {
+  const { default: PptxGenJS } = await import("pptxgenjs");
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+  pptx.author = brandedTitle(template);
+  pptx.subject = template.name;
+  pptx.theme = {
+    headFontFace: "Aptos Display",
+    bodyFontFace: "Aptos",
+  };
+
+  const slides = buildSlideDeck(markdown, assets, template).slides;
+  slides.forEach((slidePreview, index) => {
+    const slide = pptx.addSlide();
+    slide.background = { color: slidePreview.background.replace("#", "") || "FFFFFF" };
+    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 0.12, fill: { color: template.primaryColor }, line: { color: template.primaryColor } });
+    if (template.logoDataUrl) {
+      slide.addImage({ data: template.logoDataUrl, x: 11.2, y: 0.25, w: 1.55, h: 0.55 });
+    } else {
+      slide.addText(brandedTitle(template), { x: 10.25, y: 0.3, w: 2.5, h: 0.25, fontSize: 8, bold: true, color: template.primaryColor, align: "right" });
+    }
+
+    slide.addText(slidePreview.title, {
+      x: 0.65,
+      y: 0.65,
+      w: 11.2,
+      h: 0.55,
+      fontSize: 28,
+      bold: true,
+      color: template.primaryColor,
+      margin: 0,
+    });
+    slide.addShape(pptx.ShapeType.line, { x: 0.65, y: 1.28, w: 2.2, h: 0, line: { color: template.accentColor, width: 2 } });
+
+    const hasImage = slidePreview.imageAssets.length > 0;
+    const imageLeft = slidePreview.layout === "image-left";
+    const imageFull = slidePreview.layout === "image-full";
+    const textWidth = hasImage && !imageFull ? 6.8 : 11.65;
+    const textX = hasImage && imageLeft ? 5.75 : 0.8;
+    const textY = 1.65;
+    const textHeight = 5.1;
+
+    const textLines = [
+      slidePreview.keyMessage,
+      ...slidePreview.bullets,
+    ].filter(Boolean);
+
+    if (textLines.length > 0 && !imageFull) {
+      const bulletLines = textLines.map((line) => ({ text: line, options: { bullet: { type: "bullet" as const } } }));
+      slide.addText(bulletLines, {
+        x: textX,
+        y: textY,
+        w: textWidth,
+        h: textHeight,
+        fontSize: 16,
+        color: "171827",
+        breakLine: false,
+        fit: "shrink",
+        valign: "top",
+      });
+    }
+
+    if (hasImage) {
+      slidePreview.imageAssets.slice(0, 2).forEach((asset, assetIndex) => {
+        const imageX = imageFull ? 0.85 : imageLeft ? 0.8 : 8.1;
+        const imageY = imageFull ? 1.5 : 1.5 + assetIndex * 3.4;
+        const imageW = imageFull ? 11.65 : 4.5;
+        const imageH = imageFull ? 5.05 : 3.25;
+        slide.addImage({ data: asset.content, x: imageX, y: imageY, w: imageW, h: imageH });
+      });
+    }
+
+    if (slidePreview.speakerNotes) {
+      const notesText = slidePreview.speakerNotes.trim();
+      if (notesText && typeof (slide as any).addNotes === "function") {
+        (slide as any).addNotes(notesText);
+      }
+    }
+
+    slide.addText(`${brandedTitle(template)} | ${index + 1}`, { x: 0.65, y: 7.05, w: 12, h: 0.22, fontSize: 7, color: "627168", align: "right" });
+  });
+
+  return (await pptx.write({ outputType: "blob" })) as Blob;
 }
 
 export { App };

@@ -65,6 +65,10 @@ export function getTasks() {
   return remoteGetPayloads<WorkTask>("work_tasks", taskStore, "updated_at.desc", taskTimestamp, () => getAll<WorkTask>(taskStore));
 }
 
+export function getCachedTasks() {
+  return getAll<WorkTask>(taskStore);
+}
+
 export async function saveTask(task: WorkTask) {
   await put(taskStore, task);
   await remoteUpsertPayload("work_tasks", task.id, task, task.updatedAt);
@@ -79,6 +83,10 @@ export function getOutputs() {
   return remoteGetPayloads<SavedOutput>("saved_outputs", outputStore, "created_at.desc", outputTimestamp, () => getAll<SavedOutput>(outputStore));
 }
 
+export function getCachedOutputs() {
+  return getAll<SavedOutput>(outputStore);
+}
+
 export async function saveOutput(output: SavedOutput) {
   await put(outputStore, output);
   await remoteUpsertPayload("saved_outputs", output.id, output, output.createdAt);
@@ -88,14 +96,25 @@ export function getNotes() {
   return getMeta<AppNote[]>("appNotes", []);
 }
 
+export function getCachedNotes() {
+  return getCachedMeta<AppNote[]>("appNotes", []);
+}
+
 export function saveNotes(notes: AppNote[]) {
   return setMeta("appNotes", notes);
 }
 
 export async function getMeta<T>(key: string, fallback: T) {
   const remoteValue = await remoteGetMeta<T>(key);
-  if (remoteValue !== undefined) return remoteValue;
+  if (remoteValue !== undefined) {
+    await put(metaStore, { key, value: remoteValue });
+    return remoteValue;
+  }
 
+  return getCachedMeta(key, fallback);
+}
+
+export async function getCachedMeta<T>(key: string, fallback: T) {
   const db = await openDatabase();
   return new Promise<T>((resolve, reject) => {
     const transaction = db.transaction(metaStore, "readonly");
