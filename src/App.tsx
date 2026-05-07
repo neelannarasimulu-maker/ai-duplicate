@@ -1638,6 +1638,16 @@ function App() {
     setMessage("");
   }
 
+  function openTasksNavigation() {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 700px)").matches) {
+      setViewMode("mobile");
+      setMobileSection("tasks");
+      return;
+    }
+
+    setViewMode("work");
+  }
+
   return (
     <main className="app-shell">
       <aside className="app-rail" aria-label="Primary navigation">
@@ -1653,7 +1663,7 @@ function App() {
             <LayoutDashboard size={17} />
             Home
           </button>
-          <button className={viewMode === "work" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("work")} type="button">
+          <button className={viewMode === "work" || viewMode === "mobile" ? "nav-button active" : "nav-button"} onClick={openTasksNavigation} type="button">
             <ListTodo size={17} />
             Tasks
           </button>
@@ -1690,7 +1700,7 @@ function App() {
         </div>
       </aside>
 
-      <section className="app-main">
+      <section className={`app-main app-main-${viewMode}`}>
       <section className="topbar">
         <div>
           <p className="eyebrow">AI-enabled task command center</p>
@@ -1886,13 +1896,82 @@ function App() {
 
           {mobileSection === "tasks" && (
           <section className="mobile-task-view">
+            <div className="mobile-project-strip" aria-label="Mobile project selector">
+              {mobileProjectGroups.map((item) => (
+                <button
+                  className={projectId === item.projectId ? "active" : ""}
+                  key={item.projectId}
+                  onClick={() => updateProject(item.projectId)}
+                  type="button"
+                >
+                  <span>{projects[item.projectId].name}</span>
+                  <strong>{item.total - item.closed}</strong>
+                  <small>{item.favorite ? `${item.favorite} fav` : `${item.closed} closed`}</small>
+                </button>
+              ))}
+            </div>
+            {mobileCurrentProjectGroup && (
+              <div className="mobile-status-groups">
+                <section className="mobile-project-title">
+                  <div>
+                    <strong>{projects[mobileCurrentProjectGroup.projectId].name}</strong>
+                    <span>{mobileActiveProjectTasks.length} active - {mobileFavoriteProjectTasks.length} favorites</span>
+                  </div>
+                  <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
+                    Full view
+                  </button>
+                </section>
+
+                <section className="mobile-task-section">
+                  <div className="result-header">
+                    <h2>
+                      <ListTodo size={18} />
+                      Active tasks
+                    </h2>
+                    <span className="subtle-count">{mobileActiveProjectTasks.length}</span>
+                  </div>
+                  <div className="mobile-task-list">
+                    {mobileActiveProjectTasks.map((item) => (
+                      <MobileTaskCard
+                        activeWorkTaskId={activeWorkTaskId}
+                        item={item}
+                        key={item.id}
+                        now={now}
+                        onOpen={openMobileTask}
+                        onToggleFavorite={toggleTaskFavorite}
+                      />
+                    ))}
+                    {mobileActiveProjectTasks.length === 0 && <p className="empty compact-empty">No active tasks in this project.</p>}
+                  </div>
+                </section>
+
+                <details className="mobile-more-status">
+                  <summary>
+                    <span>Browse by status</span>
+                    <strong>{mobileCurrentProjectGroup.total}</strong>
+                  </summary>
+                  {mobileStatusOrder.map((status) => (
+                  <MobileStatusSection
+                    activeWorkTaskId={activeWorkTaskId}
+                    items={mobileCurrentProjectGroup.byStatus[status]}
+                    key={status}
+                    now={now}
+                    onOpen={openMobileTask}
+                    onToggleFavorite={toggleTaskFavorite}
+                    status={status}
+                  />
+                  ))}
+                </details>
+              </div>
+            )}
+
             <section className="mobile-overview-panel">
               <div className="mobile-section-header">
                 <div>
                   <p className="eyebrow">Mobile task workspace</p>
                   <h2>
                     <Smartphone size={18} />
-                    Today on mobile
+                    Today
                   </h2>
                 </div>
                 <button className="primary-button" onClick={() => setMobileSection("capture")} type="button">
@@ -1949,99 +2028,6 @@ function App() {
                   ))}
                 </div>
               </section>
-            )}
-
-            <div className="mobile-project-strip" aria-label="Mobile project selector">
-              {mobileProjectGroups.map((item) => (
-                <button
-                  className={projectId === item.projectId ? "active" : ""}
-                  key={item.projectId}
-                  onClick={() => updateProject(item.projectId)}
-                  type="button"
-                >
-                  <span>{projects[item.projectId].name}</span>
-                  <strong>{item.total - item.closed}</strong>
-                  <small>{item.favorite ? `${item.favorite} fav` : `${item.closed} closed`}</small>
-                </button>
-              ))}
-            </div>
-            {mobileCurrentProjectGroup && (
-              <div className="mobile-status-groups">
-                <section className="mobile-project-title">
-                  <div>
-                    <strong>{projects[mobileCurrentProjectGroup.projectId].name}</strong>
-                    <span>{mobileActiveProjectTasks.length} active - {mobileFavoriteProjectTasks.length} favorites</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
-                    Full view
-                  </button>
-                </section>
-
-                {mobileFavoriteProjectTasks.length > 0 && (
-                  <section className="mobile-task-section">
-                    <div className="result-header">
-                      <h2>
-                        <Star size={18} />
-                        Project favorites
-                      </h2>
-                      <span className="subtle-count">{mobileFavoriteProjectTasks.length}</span>
-                    </div>
-                    <div className="mobile-task-list">
-                      {mobileFavoriteProjectTasks.map((item) => (
-                        <MobileTaskCard
-                          activeWorkTaskId={activeWorkTaskId}
-                          item={item}
-                          key={item.id}
-                          now={now}
-                          onOpen={openMobileTask}
-                          onToggleFavorite={toggleTaskFavorite}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                )}
-
-                <section className="mobile-task-section">
-                  <div className="result-header">
-                    <h2>
-                      <ListTodo size={18} />
-                      Active tasks
-                    </h2>
-                    <span className="subtle-count">{mobileActiveProjectTasks.length}</span>
-                  </div>
-                  <div className="mobile-task-list">
-                    {mobileActiveProjectTasks.map((item) => (
-                      <MobileTaskCard
-                        activeWorkTaskId={activeWorkTaskId}
-                        item={item}
-                        key={item.id}
-                        now={now}
-                        onOpen={openMobileTask}
-                        onToggleFavorite={toggleTaskFavorite}
-                      />
-                    ))}
-                    {mobileActiveProjectTasks.length === 0 && <p className="empty compact-empty">No active tasks in this project.</p>}
-                  </div>
-                </section>
-
-                <details className="mobile-more-status">
-                  <summary>
-                    <span>Browse by status</span>
-                    <strong>{mobileCurrentProjectGroup.total}</strong>
-                  </summary>
-                  {mobileStatusOrder.map((status) => (
-                  <MobileStatusSection
-                    activeWorkTaskId={activeWorkTaskId}
-                    items={mobileCurrentProjectGroup.byStatus[status]}
-                    key={status}
-                    now={now}
-                    onOpen={openMobileTask}
-                    onToggleFavorite={toggleTaskFavorite}
-                    status={status}
-                  />
-                  ))}
-                </details>
-              </div>
             )}
           </section>
           )}
@@ -3755,14 +3741,19 @@ function MobileTaskCard({
   onOpen: (task: WorkTask, target: "details" | "ai") => void;
   onToggleFavorite: (task: WorkTask) => void;
 }) {
+  const dueLabel = taskDateLabel(item);
+
   return (
     <article className={`${taskClassName(item, activeWorkTaskId)} mobile-task-card`}>
       <div className="mobile-task-card-header">
         <div>
           <strong>{item.title}</strong>
-          <small>{projects[item.projectId].name} - {item.category} - {item.priority}</small>
-          <small>{taskDateLabel(item)}</small>
-          {isValidDateTime(item.reminderAt) && <small>{reminderLabel(item, now)}</small>}
+          <div className="mobile-task-card-meta">
+            <span className={`status-pill status-${statusSlug(item.status)}`}>{item.status}</span>
+            <span className={`priority-pill priority-${item.priority.toLowerCase()}`}>{item.priority}</span>
+            {dueLabel !== "No due date" && <small>{dueLabel}</small>}
+            {isValidDateTime(item.reminderAt) && <small>{reminderLabel(item, now)}</small>}
+          </div>
         </div>
         <button
           aria-label={item.favorite ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`}

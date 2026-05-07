@@ -342,7 +342,7 @@ summary:focus-visible {
 
 .mobile-shell {
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 
 .mobile-tabs {
@@ -390,7 +390,7 @@ summary:focus-visible {
 
 .mobile-task-view {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .mobile-overview-panel,
@@ -401,8 +401,8 @@ summary:focus-visible {
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-panel);
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 10px;
+  padding: 10px;
 }
 
 .mobile-overview-panel {
@@ -433,13 +433,13 @@ summary:focus-visible {
   color: #ffffff;
   display: grid;
   gap: 4px;
-  min-height: 70px;
-  padding: 10px;
+  min-height: 58px;
+  padding: 8px;
   text-align: left;
 }
 
 .mobile-metric-grid strong {
-  font-size: 1.45rem;
+  font-size: 1.25rem;
   line-height: 1;
 }
 
@@ -501,7 +501,7 @@ summary:focus-visible {
   gap: 8px;
   margin: 0 -2px;
   overflow-x: auto;
-  padding: 2px 2px 8px;
+  padding: 2px 2px 4px;
   scrollbar-width: thin;
 }
 
@@ -509,10 +509,11 @@ summary:focus-visible {
   align-items: start;
   border-color: #dce2f4;
   display: grid;
-  flex: 0 0 136px;
-  gap: 4px;
+  flex: 0 0 126px;
+  gap: 2px;
   justify-items: start;
-  min-height: 64px;
+  min-height: 54px;
+  padding: 8px 10px;
   text-align: left;
 }
 
@@ -528,7 +529,7 @@ summary:focus-visible {
 }
 
 .mobile-project-strip strong {
-  font-size: 1.25rem;
+  font-size: 1.05rem;
 }
 
 .mobile-project-strip small {
@@ -543,7 +544,7 @@ summary:focus-visible {
 
 .mobile-status-groups {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mobile-project-title {
@@ -553,7 +554,7 @@ summary:focus-visible {
   border-radius: 8px;
   display: flex;
   justify-content: space-between;
-  padding: 12px;
+  padding: 9px 10px;
 }
 
 .mobile-project-title div {
@@ -563,6 +564,7 @@ summary:focus-visible {
 
 .mobile-project-title span {
   color: #5b6860;
+  font-size: 0.82rem;
   font-weight: 800;
 }
 
@@ -587,8 +589,8 @@ summary:focus-visible {
   font-weight: 900;
   justify-content: space-between;
   list-style: none;
-  min-height: 48px;
-  padding: 12px;
+  min-height: 42px;
+  padding: 9px 10px;
 }
 
 .mobile-more-status > summary::-webkit-details-marker {
@@ -632,8 +634,8 @@ summary:focus-visible {
   font-weight: 900;
   justify-content: space-between;
   list-style: none;
-  min-height: 48px;
-  padding: 12px;
+  min-height: 42px;
+  padding: 9px 10px;
 }
 
 .mobile-status-section summary::-webkit-details-marker {
@@ -665,7 +667,7 @@ summary:focus-visible {
 
 .mobile-status-section .mobile-task-list {
   border-top: 1px solid #edf0fa;
-  padding: 10px;
+  padding: 8px;
   animation: slideFadeIn 180ms ease both;
 }
 
@@ -1090,51 +1092,68 @@ summary:focus-visible {
 
 .mobile-task-list {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .mobile-task-list .work-task {
-  min-height: 74px;
+  min-height: 0;
 }
 
 .mobile-task-card {
   align-items: stretch;
-  padding: 12px;
+  gap: 7px;
+  padding: 8px 9px 8px 11px;
 }
 
 .mobile-task-card-header {
-  align-items: start;
+  align-items: center;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .mobile-task-card-header > div:first-child {
   display: grid;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
 }
 
-.mobile-task-card-header strong,
-.mobile-task-card-header small {
+.mobile-task-card-header strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mobile-task-card-header small {
+.mobile-task-card-header small,
+.mobile-task-card-meta small {
   color: var(--muted);
+}
+
+.mobile-task-card-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.mobile-task-card-meta .status-pill,
+.mobile-task-card-meta .priority-pill,
+.mobile-task-card-meta small {
+  font-size: 0.72rem;
+  min-height: 22px;
+  padding: 3px 6px;
 }
 
 .mobile-task-actions {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   grid-template-columns: 1fr 1fr;
 }
 
 .mobile-task-actions button {
-  min-height: 38px;
-  padding: 8px 10px;
+  min-height: 34px;
+  padding: 6px 8px;
 }
 
 .mobile-capture textarea {
@@ -3193,23 +3212,81 @@ label {
 
 @media (max-width: 560px) {
   .app-shell {
-    padding: 14px;
+    gap: 10px;
+    padding: 0 10px 12px;
   }
 
   .app-rail {
-    border-radius: var(--radius-panel);
+    border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+    gap: 8px;
+    margin: 0 -10px;
+    padding: 8px 10px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
   }
 
   .brand-mark {
-    min-height: 44px;
+    display: none;
   }
 
   .rail-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .nav-button {
+    flex: 0 0 auto;
+    font-size: 0.86rem;
+    min-height: 38px;
+    padding: 7px 10px;
+    width: auto;
+  }
+
+  .rail-actions {
+    display: none;
+  }
+
+  .app-main-mobile .topbar {
+    display: none;
   }
 
   .panel {
     padding: 14px;
+  }
+
+  .mobile-task-section,
+  .mobile-favorites,
+  .mobile-overview-panel {
+    padding: 10px;
+  }
+
+  .mobile-tabs {
+    top: 58px;
+  }
+
+  .mobile-section-header {
+    margin-bottom: 4px;
+  }
+
+  .mobile-section-header h2 {
+    font-size: 1rem;
+  }
+
+  .mobile-project-title {
+    align-items: start;
+    gap: 8px;
+  }
+
+  .mobile-project-title button {
+    flex: 0 0 auto;
+  }
+
+  .mobile-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hero-panel {
