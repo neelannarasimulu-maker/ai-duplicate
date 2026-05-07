@@ -36,17 +36,7 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   line-height: 1.5;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #f1f5f9;
-    --muted: #94a3b8;
-    --line: #334155;
-    --surface: rgba(15, 23, 42, 0.95);
-    --surface-strong: #0f172a;
-    --gradient-bg: linear-gradient(135deg, #0f172a 0%, #1e293b 48%, #334155 100%);
-  }
+  color-scheme: light;
 }
 
 * {
@@ -54,10 +44,13 @@
 }
 
 html {
+  color-scheme: light;
   scroll-behavior: smooth;
 }
 
 body {
+  background: var(--gradient-bg);
+  color: var(--ink);
   margin: 0;
   min-width: 320px;
 }
@@ -66,6 +59,7 @@ button,
 input,
 select,
 textarea {
+  color-scheme: light;
   font: inherit;
   transition: var(--transition);
 }

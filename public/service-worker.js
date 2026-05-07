@@ -1,4 +1,4 @@
-const CACHE_NAME = "ai-workbench-v5";
+const CACHE_NAME = "ai-workbench-v6";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/pwa-icon.svg"];
 
 self.addEventListener("install", (event) => {
