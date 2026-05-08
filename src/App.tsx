@@ -761,7 +761,10 @@ function App() {
   }
 
   useEffect(() => {
-    void loadCachedData();
+    void (async () => {
+      await loadCachedData();
+      await refreshData();
+    })();
   }, []);
 
   useEffect(() => {
@@ -1675,6 +1678,10 @@ function App() {
             <WandSparkles size={17} />
             AI
           </button>
+          <button className="nav-button mobile-sync-nav" disabled={syncing} onClick={() => void refreshData()} type="button">
+            <History size={17} />
+            {syncing ? "Syncing" : "Sync"}
+          </button>
           <button className={viewMode === "notes" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("notes")} type="button">
             <StickyNote size={17} />
             Notes
@@ -1822,6 +1829,10 @@ function App() {
             <button className={mobileSection === "reminders" ? "active" : ""} onClick={() => setMobileSection("reminders")} type="button">
               <CalendarClock size={16} />
               Today
+            </button>
+            <button disabled={syncing} onClick={() => void refreshData()} type="button" title="Pull latest data from Supabase">
+              <History size={16} />
+              {syncing ? "Syncing" : "Sync"}
             </button>
           </section>
 

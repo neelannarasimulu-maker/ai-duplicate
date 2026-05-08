@@ -330,6 +330,10 @@ summary:focus-visible {
   box-shadow: 0 14px 32px rgba(49, 87, 255, 0.28);
 }
 
+.mobile-sync-nav {
+  display: none;
+}
+
 .rail-actions .ghost-button {
   border-color: rgba(255, 255, 255, 0.14);
   color: #eaf0ff;
@@ -351,7 +355,7 @@ summary:focus-visible {
   border-radius: 8px;
   display: grid;
   gap: 4px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: 4px;
   position: sticky;
   top: 0;
@@ -367,6 +371,10 @@ summary:focus-visible {
 .mobile-tabs button.active {
   background: #17201b;
   color: #ffffff;
+}
+
+.mobile-tabs button:disabled {
+  opacity: 0.72;
 }
 
 .mobile-section-header {
@@ -3244,6 +3252,10 @@ label {
     min-height: 38px;
     padding: 7px 10px;
     width: auto;
+  }
+
+  .mobile-sync-nav {
+    display: inline-flex;
   }
 
   .rail-actions {

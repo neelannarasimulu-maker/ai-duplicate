@@ -166,22 +166,48 @@ async function remoteGetPayloads<T extends WorkTask | SavedOutput>(
   if (!supabaseConfigured) return localPayloads;
 
   try {
-    const response = await supabaseFetch(`/rest/v1/${table}?select=payload&order=${order}`, {
+    const response = await supabaseFetch(`/rest/v1/${table}?select=id,payload,updated_at&order=${order}`, {
       cache: "no-store",
     });
-    const rows = (await response.json()) as Array<{ payload: T }>;
+    const rows = (await response.json()) as Array<{ id: string; payload: T; updated_at: string }>;
     const remotePayloads = rows.map((row) => row.payload).filter((payload): payload is T => Boolean(payload?.id));
     const remoteById = new Map(remotePayloads.map((payload) => [payload.id, payload]));
-    const staleLocalPayloads = localPayloads.filter((payload) => !remoteById.has(payload.id));
+    const mergedById = new Map(remoteById);
+    const localPayloadsToPush: T[] = [];
+    const localPayloadsToRemove: T[] = [];
+
+    await Promise.all(
+      localPayloads.map(async (localPayload) => {
+        const remotePayload = remoteById.get(localPayload.id);
+        if (!remotePayload) {
+          const deletedAt = await remoteGetMeta<string>(deleteMetaKey(table, localPayload.id));
+          if (deletedAt) {
+            localPayloadsToRemove.push(localPayload);
+            return;
+          }
+          localPayloadsToPush.push(localPayload);
+          mergedById.set(localPayload.id, localPayload);
+          return;
+        }
+
+        if (timestampValue(getTimestamp(localPayload)) > timestampValue(getTimestamp(remotePayload))) {
+          localPayloadsToPush.push(localPayload);
+          mergedById.set(localPayload.id, localPayload);
+        }
+      }),
+    );
+
+    const mergedPayloads = Array.from(mergedById.values());
 
     void Promise.all([
-      ...remotePayloads.map((payload) => put(storeName, payload)),
-      ...staleLocalPayloads.map((payload) => remove(storeName, payload.id)),
+      ...mergedPayloads.map((payload) => put(storeName, payload)),
+      ...localPayloadsToPush.map((payload) => remoteUpsertPayload(table, payload.id, payload, getTimestamp(payload))),
+      ...localPayloadsToRemove.map((payload) => remove(storeName, payload.id)),
     ]).catch(() => {
-      // Remote data is still returned to the app even if local cache refresh fails.
+      // Merged data is still returned to the app even if cache refresh or retry upload fails.
     });
 
-    return remotePayloads.sort((a, b) => timestampValue(getTimestamp(b)) - timestampValue(getTimestamp(a)));
+    return mergedPayloads.sort((a, b) => timestampValue(getTimestamp(b)) - timestampValue(getTimestamp(a)));
   } catch (error) {
     console.error(`Supabase sync failed for ${table}`, error);
     if (localPayloads.length === 0) {
