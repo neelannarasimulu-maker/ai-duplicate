@@ -68,6 +68,7 @@ import type {
   WorkTask,
 } from "./types";
 import { Home } from "./components/Home";
+import { AIPromptBuilder } from "./components/AIPromptBuilder";
 
 type TaskTemplate = {
   id: string;
@@ -238,6 +239,16 @@ const requirementPresets = {
     constraints: "Make each risk or issue trackable with clear ownership and next action.",
     imageRequirements: "",
   },
+  adHoc: {
+    outputType: "Ad hoc structured output",
+    format: "Markdown",
+    tone: "Professional, clear, and practical",
+    audience: "Internal team",
+    length: "Medium",
+    sections: "Title, Context, Main content, Decisions, Next steps",
+    constraints: "Use the section list exactly as the working structure. Keep headings clear and omit sections only when they are genuinely not relevant.",
+    imageRequirements: "",
+  },
 } satisfies Record<string, Requirements>;
 
 const commonTasks: TaskTemplate[] = [
@@ -257,6 +268,7 @@ const commonTasks: TaskTemplate[] = [
   { id: "product-feature-spec", label: "Product/feature spec", description: "Define objectives, users, requirements, flows, data needs, and success criteria for build work.", category: "Product", requirements: requirementPresets.productSpec },
   { id: "ai-prompt-generator", label: "AI prompt generator", description: "Create a reusable prompt with objective, inputs, output rules, formatting, and constraints.", category: "AI", requirements: requirementPresets.promptGenerator },
   { id: "risk-issue-log", label: "Risk/issue log", description: "Track issues, impact, likelihood, ownership, mitigation, and status.", category: "Planning", requirements: requirementPresets.riskIssueLog },
+  { id: "ad-hoc-template", label: "Ad hoc template", description: "Define the content goal, audience, and section list from the frontend for one-off outputs.", category: "Custom", requirements: requirementPresets.adHoc },
 ];
 
 const legacyTemplateMap: Record<string, string> = {
@@ -340,6 +352,20 @@ const defaultOutputTemplates: OutputTemplate[] = [
     compatibleTaskIds: ["draft-document", "summarize", "create-report", "market-research", "strategy-vision"],
     slots: ["Title", "Executive summary", "Background", "Main content", "Recommendations", "Next steps"],
     style: "Use H1 for the title, H2 for major sections, concise paragraphs, and action-oriented recommendations.",
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
+  },
+  {
+    id: "ad-hoc-output",
+    name: "Ad hoc Output",
+    description: "Flexible output profile that follows the sections defined in the task brief.",
+    group: "Custom",
+    format: "DOCX",
+    ...defaultBrand,
+    scope: "global",
+    compatibleTaskIds: ["ad-hoc-template"],
+    slots: ["Use the task-defined sections"],
+    style: "Follow the sections supplied in the content brief. Use clean headings and practical wording.",
     createdAt: seedTimestamp,
     updatedAt: seedTimestamp,
   },
@@ -565,7 +591,7 @@ function App() {
   const [workTasks, setWorkTasks] = useState<WorkTask[]>([]);
   const [notes, setNotes] = useState<AppNote[]>([]);
   const [activeWorkTaskId, setActiveWorkTaskId] = useState("");
-  const [viewMode, setViewMode] = useState<"home" | "work" | "favorites" | "ai" | "reminders" | "notes" | "settings" | "mobile">("home");
+  const [viewMode, setViewMode] = useState<"home" | "work" | "favorites" | "ai" | "ai-engine" | "reminders" | "notes" | "settings" | "mobile">("home");
   const [quickTaskTitle, setQuickTaskTitle] = useState("");
   const [quickTaskDetails, setQuickTaskDetails] = useState("");
   const [quickChecklistDraft, setQuickChecklistDraft] = useState("");
@@ -611,6 +637,7 @@ function App() {
     defaultOutputTemplates[0];
   const projectHistory = savedOutputs.filter((item) => item.projectId === projectId);
   const activeWorkTask = workTasks.find((item) => item.id === activeWorkTaskId);
+  const activeTaskHistory = activeWorkTask ? savedOutputs.filter((item) => item.workTaskId === activeWorkTask.id) : [];
   const projectDashboard = buildProjectDashboard(workTasks);
   const selectedProjectStats = projectDashboard.find((item) => item.projectId === projectId);
   const projectWorkTasks = workTasks.filter((item) => item.projectId === projectId);
@@ -798,7 +825,7 @@ function App() {
     const nextOutputTemplate = preferredOutputTemplateForTask(nextProjectId, nextTaskId, outputTemplates) ?? defaultOutputTemplates[0];
     setTaskId(nextTaskId);
     setSelectedOutputTemplateId(nextOutputTemplate.id);
-    setRequirements(requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTaskId), nextOutputTemplate));
+    setRequirements(requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTaskId, taskTemplates), nextOutputTemplate));
     setGptPrompt("");
     setResult("");
     setMessage("");
@@ -814,7 +841,7 @@ function App() {
     setTaskId(nextTaskId);
     const nextTemplate = project.tasks.find((item) => item.id === nextTaskId) ?? project.tasks[0];
     const nextOutputTemplate = preferredOutputTemplateForTask(projectId, nextTaskId, availableOutputTemplates) ?? selectedOutputTemplate;
-    const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(projectId, nextTaskId), nextOutputTemplate);
+    const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(projectId, nextTaskId, taskTemplates), nextOutputTemplate);
     setSelectedOutputTemplateId(nextOutputTemplate.id);
     setRequirements(nextRequirements);
     if (activeWorkTask) {
@@ -897,8 +924,8 @@ function App() {
       id: `task-${Date.now().toString(36)}`,
       label: "New task template",
       description: "",
-      category: "General",
-      requirements: defaultRequirements,
+      category: "Custom",
+      requirements: requirementPresets.adHoc,
     };
     saveTaskTemplates([...taskTemplates, template]);
   }
@@ -1109,7 +1136,7 @@ function App() {
       checklist,
       input: "",
       assets: [],
-      requirements: requirementsLinkedToOutputTemplate(taskRequirements(taskProjectId, templateId), outputTemplate),
+      requirements: requirementsLinkedToOutputTemplate(taskRequirements(taskProjectId, templateId, taskTemplates), outputTemplate),
       gptPrompt: "",
       result: "",
       createdAt: new Date().toISOString(),
@@ -1231,11 +1258,11 @@ function App() {
   }
 
   function openAiStudio() {
-    const studioTask = activeWorkTask ?? sortedProjectTasks.find((item) => item.status !== "Closed") ?? sortedProjectTasks[0];
-    if (studioTask) openWorkTask(studioTask);
-    setViewMode(studioTask ? "ai" : "work");
+    const linkedTask = activeWorkTask ?? sortedProjectTasks.find((item) => item.status !== "Closed") ?? sortedProjectTasks[0];
+    if (linkedTask) openWorkTask(linkedTask);
+    setViewMode("ai-engine");
     window.setTimeout(() => {
-      document.getElementById(studioTask ? "ai-workspace-section" : "quick-create-section")?.scrollIntoView({
+      document.querySelector(".ai-engine-builder")?.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
@@ -1598,6 +1625,7 @@ function App() {
       createdAt: new Date().toISOString(),
       input,
       requirements,
+      gptPrompt,
       result,
       renderedOutput: applyOutputTemplate(result, selectedOutputTemplate),
     };
@@ -1615,9 +1643,66 @@ function App() {
     if (savedTask) openWorkTask(savedTask);
     setInput(saved.input);
     setRequirements(requirementsLinkedToOutputTemplate(saved.requirements, nextOutputTemplate));
-    setGptPrompt("");
+    setGptPrompt(saved.gptPrompt ?? "");
     setResult(saved.result);
     setMessage("Loaded saved output.");
+  }
+
+  function saveAiEngineActivity(activity: {
+    prompt: string;
+    output: string;
+    sourceText: string;
+    form: {
+      outputTitle: string;
+      outputType: string;
+      audience: string;
+      tone: string;
+      outputLength: string;
+      outputFormat: string;
+      sections: string[];
+      additionalInstructions: string;
+    };
+  }) {
+    const linkedTask = activeWorkTask ?? workTasks.find((item) => item.status !== "Closed") ?? workTasks[0];
+    if (!linkedTask) {
+      setMessage("Create or select a task before saving AI activity.");
+      return;
+    }
+
+    const linkedOutputTemplate = outputTemplates.find((item) => item.id === linkedTask.outputTemplateId) ?? selectedOutputTemplate;
+    const activityRequirements: Requirements = {
+      outputType: activity.form.outputType,
+      format: linkedOutputTemplate.format === "TXT" || linkedOutputTemplate.format === "DOCX" ? linkedOutputTemplate.format : "Markdown",
+      tone: activity.form.tone,
+      audience: activity.form.audience,
+      length: activity.form.outputLength,
+      sections: activity.form.sections.join(", "),
+      constraints: activity.form.additionalInstructions,
+      imageRequirements: activity.form.outputFormat === "Image prompt" ? activity.form.additionalInstructions : "",
+    };
+    const saved: SavedOutput = {
+      id: createId(),
+      projectId: linkedTask.projectId,
+      workTaskId: linkedTask.id,
+      taskId: linkedTask.templateId,
+      outputTemplateId: linkedOutputTemplate.id,
+      title: `${activity.form.outputTitle.trim() || linkedTask.title} - ${new Date().toLocaleString()}`,
+      createdAt: new Date().toISOString(),
+      input: activity.sourceText,
+      requirements: activityRequirements,
+      gptPrompt: activity.prompt,
+      result: activity.output,
+      renderedOutput: activity.output ? applyOutputTemplate(activity.output, linkedOutputTemplate) : "",
+    };
+
+    setSavedOutputs((current) => [saved, ...current]);
+    void saveOutput(saved);
+    updateWorkTask(linkedTask.id, "gptPrompt", activity.prompt);
+    updateWorkTask(linkedTask.id, "input", activity.sourceText);
+    updateWorkTask(linkedTask.id, "requirements", activityRequirements);
+    updateWorkTask(linkedTask.id, "result", activity.output);
+    setActiveWorkTaskId(linkedTask.id);
+    setMessage("AI activity saved to the linked task history.");
   }
 
   function clearWorkspace() {
@@ -1666,17 +1751,17 @@ function App() {
             <LayoutDashboard size={17} />
             Home
           </button>
-          <button className={viewMode === "work" || viewMode === "mobile" ? "nav-button active" : "nav-button"} onClick={openTasksNavigation} type="button">
-            <ListTodo size={17} />
-            Tasks
-          </button>
           <button className={viewMode === "favorites" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("favorites")} type="button">
             <Star size={17} />
             Favorites
           </button>
-          <button className={viewMode === "ai" ? "nav-button active" : "nav-button"} onClick={openAiStudio} type="button">
+          <button className={viewMode === "work" || viewMode === "mobile" ? "nav-button active" : "nav-button"} onClick={openTasksNavigation} type="button">
+            <ListTodo size={17} />
+            Tasks
+          </button>
+          <button className={viewMode === "ai-engine" ? "nav-button active" : "nav-button"} onClick={openAiStudio} type="button">
             <WandSparkles size={17} />
-            AI
+            AI Engine
           </button>
           <button className="nav-button mobile-sync-nav" disabled={syncing} onClick={() => void refreshData()} type="button">
             <History size={17} />
@@ -1711,7 +1796,7 @@ function App() {
       <section className="topbar">
         <div>
           <p className="eyebrow">AI-enabled task command center</p>
-          <h1>{viewMode === "home" ? "Today, tasks, notes, and AI drafts" : "Tasks, notes, and AI drafting"}</h1>
+          <h1>{viewMode === "home" ? "Today, tasks, notes, and AI drafts" : viewMode === "ai-engine" ? "AI Generation Engine" : "Tasks, notes, and AI drafting"}</h1>
           <div className="topbar-meta" aria-label="Workspace readiness">
             <span>
               <ShieldCheck size={14} />
@@ -1727,7 +1812,7 @@ function App() {
           </button>
           <button className="ai-action" onClick={openAiStudio} type="button">
             <WandSparkles size={16} />
-            Open AI Studio
+            Open AI Engine
           </button>
           <button
             className="ghost-button"
@@ -1747,6 +1832,28 @@ function App() {
         <div className="sync-banner" role="status">
           {message}
         </div>
+      )}
+
+      {viewMode === "ai-engine" && (
+        <AIPromptBuilder
+          activeTask={activeWorkTask}
+          onOutputChange={(value) => {
+            setResult(value);
+            updateActiveWorkTask("result", value);
+          }}
+          onPromptGenerated={(prompt, sourceText) => {
+            setGptPrompt(prompt);
+            updateActiveWorkTask("gptPrompt", prompt);
+            updateActiveWorkTask("input", sourceText);
+          }}
+          onSaveActivity={saveAiEngineActivity}
+          onTaskSelect={(id) => {
+            const selectedTask = workTasks.find((item) => item.id === id);
+            if (selectedTask) openWorkTask(selectedTask);
+          }}
+          taskHistory={activeTaskHistory}
+          tasks={sortedWorkTasks}
+        />
       )}
 
       {viewMode === "home" && (
@@ -2389,9 +2496,54 @@ function App() {
               {taskTemplates.map((template) => (
                 <article className="settings-template-row" key={template.id}>
                   <strong>{template.id}</strong>
-                  <input value={template.label} onChange={(event) => updateTaskTemplate(template.id, { label: event.target.value })} />
-                  <input value={template.category} onChange={(event) => updateTaskTemplate(template.id, { category: event.target.value })} />
-                  <textarea className="small-textarea" value={template.description} onChange={(event) => updateTaskTemplate(template.id, { description: event.target.value })} />
+                  <label>
+                    Name
+                    <input value={template.label} onChange={(event) => updateTaskTemplate(template.id, { label: event.target.value })} />
+                  </label>
+                  <label>
+                    Category
+                    <input value={template.category} onChange={(event) => updateTaskTemplate(template.id, { category: event.target.value })} />
+                  </label>
+                  <label>
+                    Description
+                    <textarea className="small-textarea" value={template.description} onChange={(event) => updateTaskTemplate(template.id, { description: event.target.value })} />
+                  </label>
+                  <label>
+                    Content goal
+                    <input
+                      value={template.requirements.outputType}
+                      onChange={(event) =>
+                        updateTaskTemplate(template.id, {
+                          requirements: { ...template.requirements, outputType: event.target.value },
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Sections
+                    <textarea
+                      className="small-textarea"
+                      placeholder="One section per line, or comma-separated"
+                      value={template.requirements.sections}
+                      onChange={(event) =>
+                        updateTaskTemplate(template.id, {
+                          requirements: { ...template.requirements, sections: event.target.value },
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Constraints
+                    <textarea
+                      className="small-textarea"
+                      value={template.requirements.constraints}
+                      onChange={(event) =>
+                        updateTaskTemplate(template.id, {
+                          requirements: { ...template.requirements, constraints: event.target.value },
+                        })
+                      }
+                    />
+                  </label>
                   <button className="danger-button icon-button" disabled={taskTemplates.length <= 1} onClick={() => deleteTaskTemplate(template.id)} type="button" title="Delete task template">
                     <Trash2 size={15} />
                   </button>
@@ -2465,9 +2617,9 @@ function App() {
                   <select value={template.format} onChange={(event) => saveOutputTemplates(outputTemplates.map((item) => item.id === template.id ? { ...item, format: event.target.value as OutputTemplateFormat, updatedAt: new Date().toISOString() } : item))}>
                     <option>Markdown</option>
                     <option>TXT</option>
-                    <option>DOCX</option>
-                    <option>PDF</option>
-                    <option>PPTX</option>
+                    <option value="DOCX">DOCX-ready content</option>
+                    <option value="PDF">PDF-ready content</option>
+                    <option value="PPTX">PPTX-ready slide content</option>
                   </select>
                   <textarea className="small-textarea" value={template.description} onChange={(event) => saveOutputTemplates(outputTemplates.map((item) => item.id === template.id ? { ...item, description: event.target.value, updatedAt: new Date().toISOString() } : item))} />
                   <button
@@ -2594,9 +2746,9 @@ function App() {
                   <select value={selectedOutputTemplate.format} onChange={(event) => updateSelectedOutputTemplate("format", event.target.value as OutputTemplateFormat)}>
                     <option>Markdown</option>
                     <option>TXT</option>
-                    <option>DOCX</option>
-                    <option>PDF</option>
-                    <option>PPTX</option>
+                    <option value="DOCX">DOCX-ready content</option>
+                    <option value="PDF">PDF-ready content</option>
+                    <option value="PPTX">PPTX-ready slide content</option>
                   </select>
                 </label>
               </div>
@@ -2716,7 +2868,7 @@ function App() {
 
           {viewMode === "ai" && !activeWorkTask && (
             <section className="panel">
-              <p className="empty">Select a task first, then open AI Studio for that task.</p>
+              <p className="empty">Select a task first, then open the AI workspace for that task.</p>
               <button className="primary-button" onClick={() => setViewMode("work")} type="button">
                 <ListTodo size={16} />
                 View tasks
@@ -2837,7 +2989,7 @@ function App() {
                 statuses={masterTaskStatuses}
                 onTemplateChange={(nextProjectId, nextTemplateId) => {
                   const nextOutputTemplate = preferredOutputTemplateForTask(nextProjectId, nextTemplateId, outputTemplates) ?? selectedOutputTemplate;
-                  const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTemplateId), nextOutputTemplate);
+                  const nextRequirements = requirementsLinkedToOutputTemplate(taskRequirements(nextProjectId, nextTemplateId, taskTemplates), nextOutputTemplate);
                   const nextTemplate = taskTemplates.find((item) => item.id === nextTemplateId) ?? taskTemplates[0] ?? defaultTaskTemplates[0];
                   setTaskId(nextTemplateId);
                   setSelectedOutputTemplateId(nextOutputTemplate.id);
@@ -2907,6 +3059,25 @@ function App() {
                   </span>
                 ))}
               </div>
+              <section className="history-panel">
+                <div className="result-header">
+                  <h3>
+                    <History size={17} />
+                    AI activity history
+                  </h3>
+                  <span className="subtle-count">{activeTaskHistory.length}</span>
+                </div>
+                <div className="history-list">
+                  {activeTaskHistory.map((saved) => (
+                    <button className="history-item" key={saved.id} onClick={() => loadSaved(saved)} type="button">
+                      <strong>{saved.title}</strong>
+                      <span>{new Date(saved.createdAt).toLocaleString()}</span>
+                      <span>{saved.input ? "Source saved" : "No source saved"} - {saved.gptPrompt ? "Prompt saved" : "No prompt saved"} - {saved.result ? "Output saved" : "No output saved"}</span>
+                    </button>
+                  ))}
+                  {activeTaskHistory.length === 0 && <p className="empty compact-empty">No AI prompt or pasted output has been saved for this task yet.</p>}
+                </div>
+              </section>
               <div className="export-bar">
                 <button className="primary-button" onClick={saveTaskOnly} type="button">
                   <Save size={16} />
@@ -3052,17 +3223,31 @@ function App() {
                       <option>Detailed</option>
                     </select>
                   </label>
+                  <label>
+                    Required sections
+                    <textarea
+                      className="small-textarea"
+                      value={requirements.sections}
+                      onChange={(event) => updateRequirement("sections", event.target.value)}
+                      placeholder="Example: Title, Context, Options, Recommendation, Next steps"
+                    />
+                  </label>
                   <div className="linked-template-field">
                     <span>Template format</span>
-                    <strong>{selectedOutputTemplate.format}</strong>
+                    <strong>{manualPromptFormatLabel(selectedOutputTemplate.format)}</strong>
                   </div>
                   <div className="linked-template-field">
                     <span>Template group</span>
                     <strong>{selectedOutputTemplate.group}</strong>
                   </div>
                 </div>
+                {selectedOutputTemplate.format === "DOCX" && (
+                  <p className="field-helper">
+                    ChatGPT will return formatted text. The app must export the final content to .docx if a real Word file is required.
+                  </p>
+                )}
                 <div className="linked-template-slots">
-                  <span>Template slots</span>
+                  <span>Output template slots</span>
                   <p>{selectedOutputTemplate.slots.join(", ")}</p>
                 </div>
                 <label>
@@ -3239,7 +3424,7 @@ function App() {
                   </button>
                   <button disabled={!result} onClick={() => void downloadResult("DOCX")} type="button">
                     <Download size={16} />
-                    DOCX
+                    Export to DOCX
                   </button>
                   <button disabled={!result} onClick={() => void downloadResult("PDF")} type="button">
                     <Download size={16} />
@@ -3906,7 +4091,11 @@ function normalizeProjectSettings(settings: ProjectSettings): ProjectSettings {
 }
 
 function normalizeTaskTemplates(templates: TaskTemplate[]) {
-  const normalized = (Array.isArray(templates) ? templates : [])
+  const mergedTemplates = [
+    ...(Array.isArray(templates) ? templates : []),
+    ...defaultTaskTemplates.filter((defaultTemplate) => !templates?.some((template) => template.id === defaultTemplate.id)),
+  ];
+  const normalized = mergedTemplates
     .filter((template) => template?.id)
     .map((template, index) => {
       const fallback = defaultTaskTemplates[index % defaultTaskTemplates.length];
@@ -3916,10 +4105,19 @@ function normalizeTaskTemplates(templates: TaskTemplate[]) {
         label: template.label || fallback.label,
         category: template.category || fallback.category,
         description: template.description ?? "",
-        requirements: template.requirements ?? fallback.requirements,
+        requirements: normalizeRequirements(template.requirements, fallback.requirements),
       };
     });
   return normalized.length ? normalized : defaultTaskTemplates;
+}
+
+function normalizeRequirements(requirements: Requirements | undefined, fallback: Requirements): Requirements {
+  return {
+    ...fallback,
+    ...(requirements ?? {}),
+    format: requirements?.format === "Markdown" || requirements?.format === "TXT" || requirements?.format === "DOCX" ? requirements.format : fallback.format,
+    sections: requirements?.sections ?? fallback.sections,
+  };
 }
 
 function normalizeMasterStatuses(statuses: typeof defaultMasterStatuses) {
@@ -4067,8 +4265,8 @@ async function notifyReminder(task: WorkTask) {
   }
 }
 
-function taskRequirements(projectId: ProjectId, templateId: string): Requirements {
-  const template = projects[projectId].tasks.find((item) => item.id === templateId);
+function taskRequirements(projectId: ProjectId, templateId: string, templates = projects[projectId]?.tasks ?? defaultTaskTemplates): Requirements {
+  const template = templates.find((item) => item.id === templateId) ?? projects[projectId]?.tasks.find((item) => item.id === templateId);
   return { ...(template?.requirements ?? defaultRequirements) };
 }
 
@@ -4076,7 +4274,7 @@ function requirementsLinkedToOutputTemplate(requirements: Requirements, outputTe
   return {
     ...requirements,
     format: outputTemplate.format === "PPTX" || outputTemplate.format === "PDF" ? "Markdown" : outputTemplate.format,
-    sections: outputTemplate.slots.join(", "),
+    sections: requirements.sections.trim() || outputTemplate.slots.join(", "),
   };
 }
 
@@ -4404,6 +4602,38 @@ function buildClarifyingQuestions(projectName: string, taskLabel: string, missin
   ].join("\n");
 }
 
+function normalizeSectionList(sections: string) {
+  return sections
+    .split(/\n|,/)
+    .map((section) => section.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function manualPromptFormatLabel(format: OutputTemplateFormat) {
+  if (format === "DOCX") return "DOCX-ready content";
+  if (format === "PDF") return "PDF-ready content";
+  if (format === "PPTX") return "PPTX-ready slide content";
+  if (format === "TXT") return "Plain text";
+  return "Markdown";
+}
+
+function manualPromptExportInstruction(format: OutputTemplateFormat) {
+  if (format === "DOCX") {
+    return [
+      "Formatting/export target: DOCX-ready Markdown.",
+      "Return the final answer directly in this chat.",
+      "Do not claim to create, attach, export or download a DOCX file.",
+      "Structure the content so it can be copied into Word or exported by my app with minimal editing.",
+    ].join("\n");
+  }
+
+  if (format === "PDF") return "Formatting/export target: PDF-ready Markdown. Return the final answer directly in this chat as text; the app is responsible for PDF export.";
+  if (format === "PPTX") return "Formatting/export target: PPTX-ready slide content. Return slide-ready text or JSON directly in this chat; the app is responsible for PPTX export.";
+  if (format === "TXT") return "Formatting/export target: Plain text. Return the final answer directly in this chat.";
+  return "Formatting/export target: Markdown. Return the final answer directly in this chat.";
+}
+
 function buildFullLlmPrompt(
   projectName: string,
   projectContext: string,
@@ -4428,9 +4658,11 @@ function buildFullLlmPrompt(
       : "",
     assets.some((asset) => asset.content.includes("[Content truncated at")) ? "Some source text was truncated. Flag any important gaps before relying on missing material." : "",
   ].filter(Boolean);
+  const exportInstruction = manualPromptExportInstruction(outputTemplate.format);
+  const promptFormatLabel = manualPromptFormatLabel(outputTemplate.format);
 
   return [
-    "You are a practical AI tasks and notes assistant. Process the full source material and create a new output document.",
+    "You are a practical AI tasks and notes assistant. Process the full source material and create new output content.",
     "I am using ChatGPT Plus manually, so produce the final answer directly in this chat.",
     "",
     "INTENT BRIEF",
@@ -4442,7 +4674,7 @@ function buildFullLlmPrompt(
     `Source limitations: ${sourceLimitations.length ? sourceLimitations.join(" ") : "No major source limitations detected."}`,
     "Assumptions policy: State important assumptions explicitly. Do not invent missing facts, figures, dates, commitments, or document contents.",
     `Output structure: Use the task sections and map the content into the output template slots named below.`,
-    `Formatting/export target: ${outputTemplate.format}. The app will render the pasted answer into DOCX, PDF, or PPTX using the selected maintained template profile.`,
+    exportInstruction,
     "",
     "PROJECT",
     `Name: ${projectName}`,
@@ -4453,11 +4685,11 @@ function buildFullLlmPrompt(
     "",
     "CONTENT BRIEF",
     `Content goal: ${requirements.outputType}`,
-    `Linked export format: ${outputTemplate.format}`,
+    `Linked export format: ${promptFormatLabel}`,
     `Tone: ${requirements.tone}`,
     `Audience: ${requirements.audience}`,
     `Length: ${requirements.length}`,
-    `Required template slots: ${requirements.sections}`,
+    `Required sections: ${normalizeSectionList(requirements.sections)}`,
     `Constraints: ${requirements.constraints || "None"}`,
     `Image requirements: ${requirements.imageRequirements || "None"}`,
     "",
@@ -4465,10 +4697,10 @@ function buildFullLlmPrompt(
     `Name: ${outputTemplate.name}`,
     `Description: ${outputTemplate.description || "None"}`,
     `Group: ${outputTemplate.group}`,
-    `Preferred format: ${outputTemplate.format}`,
+    `Preferred format: ${promptFormatLabel}`,
     `Maintained source template: ${outputTemplate.sourceTemplateName || "None uploaded"}`,
     `Compatible task IDs: ${outputTemplate.compatibleTaskIds.length ? outputTemplate.compatibleTaskIds.join(", ") : "Any"}`,
-    `Slots: ${outputTemplate.slots.join(", ")}`,
+    `Output template slots: ${outputTemplate.slots.join(", ")}`,
     `Style rules: ${outputTemplate.style || "None"}`,
     outputTemplate.sourceTemplateText
       ? `Extracted source template text and placeholders:\n${outputTemplate.sourceTemplateText}`
@@ -4497,7 +4729,9 @@ function buildFullLlmPrompt(
     unreadableFiles.length ? unreadableFiles.map((asset) => `- ${asset.name}: ${asset.content}`).join("\n") : "No other attachments.",
     "",
     "INSTRUCTIONS",
-    "Create the requested output as a new, business-ready document, summary, or email draft according to the selected output type.",
+    "Create the requested output as business-ready text according to the selected output type.",
+    "The AI prompt should only request text content. The app is responsible for turning that content into DOCX, PDF, or PPTX files.",
+    "Use headings that match the required sections from the content brief.",
     "Map the answer to the output template slots and any placeholders found in the maintained source template.",
     outputTemplate.format === "PPTX"
       ? "For presentations, return strict JSON only with this shape: { \"slides\": [{ \"id\": \"slide-1\", \"title\": \"\", \"layout\": \"title|section|content|two-column|image-left|image-right|image-full\", \"background\": \"#ffffff\", \"keyMessage\": \"\", \"bullets\": [], \"speakerNotes\": \"\", \"visualDirection\": \"\", \"images\": [{ \"label\": \"\", \"source\": \"matching uploaded file name or visual source\", \"alt\": \"\" }] }] }. Do not wrap the JSON in code fences."

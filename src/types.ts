@@ -90,6 +90,7 @@ export type SavedOutput = {
   createdAt: string;
   input: string;
   requirements: Requirements;
+  gptPrompt?: string;
   result: string;
   renderedOutput?: string;
 };

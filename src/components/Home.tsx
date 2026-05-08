@@ -253,10 +253,10 @@ export function Home(props: HomeProps) {
           <div className="result-header">
             <h2>
               <Sparkles size={18} />
-              AI Studio
+              AI Engine
             </h2>
           </div>
-          <p className="context-copy">Turn task notes, uploaded documents, PowerPoint text, and checklists into document drafts, summaries, reports, and emails.</p>
+          <p className="context-copy">Turn source notes, uploaded documents, PowerPoint text, and rough ideas into structured prompts for documents, summaries, reports, emails, and image generation.</p>
           <div className="ai-studio-actions">
             <button className="primary-button ai-action" onClick={openAiStudio} type="button">
               <WandSparkles size={16} />
