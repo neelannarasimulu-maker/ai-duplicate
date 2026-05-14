@@ -566,12 +566,25 @@ const outputTemplateMetaKey = "outputTemplates";
 const projectSettingsMetaKey = "projectSettings";
 const taskTemplatesMetaKey = "taskTemplates";
 const masterStatusesMetaKey = "masterStatuses";
+const reminderDeviceIdStorageKey = "ai-workbench-reminder-device-id";
+const deviceTriggeredReminderMetaKey = `triggeredReminderIds:${getReminderDeviceId()}`;
 const mobileStatusOrder: TaskStatus[] = ["In Progress", "Open", "Blocked", "To Do Later", "Closed"];
 const maxUploadSizeBytes = 8 * 1024 * 1024;
 const maxTextAssetCharacters = 120_000;
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getReminderDeviceId() {
+  if (typeof localStorage === "undefined") return "browser";
+
+  const existing = localStorage.getItem(reminderDeviceIdStorageKey);
+  if (existing) return existing;
+
+  const next = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : createId();
+  localStorage.setItem(reminderDeviceIdStorageKey, next);
+  return next;
 }
 
 function App() {
@@ -723,7 +736,7 @@ function App() {
         outputWarning = error instanceof Error ? ` Saved outputs failed: ${error.message}` : " Saved outputs failed.";
       }
       const noteResult = await getNotes();
-      const triggeredResult = await getMeta<string[]>(triggeredReminderMetaKey, []);
+      const triggeredResult = await getMeta<string[]>(deviceTriggeredReminderMetaKey, []);
       const outputTemplateResult = await getMeta<OutputTemplate[]>(outputTemplateMetaKey, defaultOutputTemplates);
       const projectSettingsResult = await getMeta<ProjectSettings>(projectSettingsMetaKey, defaultProjectSettings);
       const taskTemplatesResult = await getMeta<TaskTemplate[]>(taskTemplatesMetaKey, defaultTaskTemplates);
@@ -761,7 +774,7 @@ function App() {
         getCachedTasks(),
         getCachedOutputs(),
         getCachedNotes(),
-        getCachedMeta<string[]>(triggeredReminderMetaKey, []),
+        getCachedMeta<string[]>(deviceTriggeredReminderMetaKey, []),
         getCachedMeta<OutputTemplate[]>(outputTemplateMetaKey, defaultOutputTemplates),
         getCachedMeta<ProjectSettings>(projectSettingsMetaKey, defaultProjectSettings),
         getCachedMeta<TaskTemplate[]>(taskTemplatesMetaKey, defaultTaskTemplates),
@@ -803,6 +816,44 @@ function App() {
   }, []);
 
   useEffect(() => {
+    function checkRemindersNow() {
+      setNow(Date.now());
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") checkRemindersNow();
+    }
+
+    window.addEventListener("focus", checkRemindersNow);
+    window.addEventListener("pageshow", checkRemindersNow);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", checkRemindersNow);
+      window.removeEventListener("pageshow", checkRemindersNow);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextReminderAt = workTasks.reduce<number | undefined>((earliest, item) => {
+      if (!item.reminderAt || item.status === "Closed") return earliest;
+      const dueAt = new Date(item.reminderAt).getTime();
+      if (!Number.isFinite(dueAt) || dueAt <= now || triggeredReminderIds.includes(reminderTriggerId(item))) return earliest;
+      return earliest === undefined || dueAt < earliest ? dueAt : earliest;
+    }, undefined);
+
+    if (nextReminderAt === undefined) return;
+
+    const delay = Math.max(0, Math.min(nextReminderAt - Date.now() + 1000, 2_147_483_647));
+    const timer = window.setTimeout(() => {
+      setNow(Date.now());
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [now, triggeredReminderIds, workTasks]);
+
+  useEffect(() => {
     const dueTasks = workTasks.filter((item) => {
       if (!item.reminderAt || item.status === "Closed") return false;
       const dueAt = new Date(item.reminderAt).getTime();
@@ -813,7 +864,7 @@ function App() {
 
     const nextTriggeredIds = [...triggeredReminderIds, ...dueTasks.map(reminderTriggerId)];
     setTriggeredReminderIds(nextTriggeredIds);
-    void setMeta(triggeredReminderMetaKey, nextTriggeredIds);
+    void setMeta(deviceTriggeredReminderMetaKey, nextTriggeredIds);
     dueTasks.forEach((item) => {
       void notifyReminder(item);
     });
@@ -1346,13 +1397,19 @@ function App() {
 
     const permission = await Notification.requestPermission();
     setNotificationPermission(permission);
+
+    if (permission === "granted" && "serviceWorker" in navigator) {
+      await navigator.serviceWorker.ready.catch(() => undefined);
+    }
+
+    setNow(Date.now());
     setMessage(permission === "granted" ? "Reminder notifications enabled for this device." : "Reminder notifications were not enabled.");
   }
 
   function forgetTriggeredReminder(taskId: string) {
     setTriggeredReminderIds((current) => {
       const next = current.filter((item) => !item.startsWith(`${taskId}:`));
-      void setMeta(triggeredReminderMetaKey, next);
+      void setMeta(deviceTriggeredReminderMetaKey, next);
       return next;
     });
   }
