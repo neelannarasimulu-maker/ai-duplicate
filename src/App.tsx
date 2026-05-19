@@ -16,6 +16,7 @@ import {
   Image,
   LayoutDashboard,
   ListTodo,
+  Menu,
   Maximize2,
   Minimize2,
   Pin,
@@ -605,6 +606,7 @@ function App() {
   const [notes, setNotes] = useState<AppNote[]>([]);
   const [activeWorkTaskId, setActiveWorkTaskId] = useState("");
   const [viewMode, setViewMode] = useState<"home" | "work" | "favorites" | "ai" | "ai-engine" | "reminders" | "notes" | "settings" | "mobile">("home");
+  const [navMenuOpen, setNavMenuOpen] = useState(false);
   const [quickTaskTitle, setQuickTaskTitle] = useState("");
   const [quickTaskDetails, setQuickTaskDetails] = useState("");
   const [quickChecklistDraft, setQuickChecklistDraft] = useState("");
@@ -616,6 +618,8 @@ function App() {
   const [captureTaskOpen, setCaptureTaskOpen] = useState(false);
   const [captureNoteOpen, setCaptureNoteOpen] = useState(false);
   const [noteStatusFilter, setNoteStatusFilter] = useState<"Active" | "Closed" | "All">("Active");
+  const [selectedNoteId, setSelectedNoteId] = useState("");
+  const [showClosedChecklistItems, setShowClosedChecklistItems] = useState(false);
   const [taskBrowserOpen, setTaskBrowserOpen] = useState(true);
   const [mobileFullOpen, setMobileFullOpen] = useState(false);
   const [mobileSection, setMobileSection] = useState<"capture" | "tasks" | "reminders">("tasks");
@@ -681,6 +685,11 @@ function App() {
   const mobileActiveProjectTasks = sortedProjectTasks.filter((item) => item.status !== "Closed");
   const mobileFavoriteProjectTasks = sortedProjectTasks.filter((item) => item.favorite);
   const recentNotes = [...notes].sort((a, b) => dateValue(b.updatedAt) - dateValue(a.updatedAt)).slice(0, 4);
+  const selectedNote = notes.find((item) => item.id === selectedNoteId);
+  const visibleChecklistItems = activeWorkTask?.checklist.filter((item) => !item.done) ?? [];
+  const closedChecklistItems = activeWorkTask?.checklist.filter((item) => item.done) ?? [];
+  const mobileDueNow = [...reminderPlanner.overdue, ...reminderPlanner.today].slice(0, 4);
+  const mobileNextActions = mobileActiveProjectTasks.slice(0, 4);
 
   const missingDetails = useMemo(() => {
     const missing: string[] = [];
@@ -706,6 +715,16 @@ function App() {
     if (previewSlideIndex < slidePreview.length) return;
     setPreviewSlideIndex(Math.max(slidePreview.length - 1, 0));
   }, [previewSlideIndex, slidePreview.length]);
+
+  useEffect(() => {
+    if (!selectedNoteId) return;
+    if (notes.some((item) => item.id === selectedNoteId)) return;
+    setSelectedNoteId("");
+  }, [notes, selectedNoteId]);
+
+  useEffect(() => {
+    setShowClosedChecklistItems(false);
+  }, [activeWorkTaskId]);
 
   useEffect(() => {
     if (!fullScreenPreviewOpen) return;
@@ -1294,9 +1313,8 @@ function App() {
   function openNote(note: AppNote) {
     setProjectId(note.projectId);
     setViewMode("notes");
-    window.setTimeout(() => {
-      document.getElementById(`note-${note.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
+    setSelectedNoteId(note.id);
+    setNavMenuOpen(false);
   }
 
   function toggleTaskFavorite(item: WorkTask) {
@@ -1784,6 +1802,7 @@ function App() {
   }
 
   function openTasksNavigation() {
+    setNavMenuOpen(false);
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 700px)").matches) {
       setViewMode("mobile");
       setMobileSection("tasks");
@@ -1793,9 +1812,19 @@ function App() {
     setViewMode("work");
   }
 
+  function openQuickView(mode: "home" | "favorites" | "notes" | "reminders" | "settings") {
+    setNavMenuOpen(false);
+    setViewMode(mode);
+  }
+
+  function closeNotePreview() {
+    setSelectedNoteId("");
+  }
+
   return (
     <main className="app-shell">
-      <aside className="app-rail" aria-label="Primary navigation">
+      {navMenuOpen && <button aria-label="Close navigation menu" className="app-drawer-scrim" onClick={() => setNavMenuOpen(false)} type="button" />}
+      <aside className={navMenuOpen ? "app-rail open" : "app-rail"} aria-label="Primary navigation">
         <div className="brand-mark">
           <span>AI</span>
           <div>
@@ -1804,11 +1833,11 @@ function App() {
           </div>
         </div>
         <nav className="rail-nav">
-          <button className={viewMode === "home" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("home")} type="button">
+          <button className={viewMode === "home" ? "nav-button active" : "nav-button"} onClick={() => openQuickView("home")} type="button">
             <LayoutDashboard size={17} />
             Home
           </button>
-          <button className={viewMode === "favorites" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("favorites")} type="button">
+          <button className={viewMode === "favorites" ? "nav-button active" : "nav-button"} onClick={() => openQuickView("favorites")} type="button">
             <Star size={17} />
             Favorites
           </button>
@@ -1824,15 +1853,15 @@ function App() {
             <History size={17} />
             {syncing ? "Syncing" : "Sync"}
           </button>
-          <button className={viewMode === "notes" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("notes")} type="button">
+          <button className={viewMode === "notes" ? "nav-button active" : "nav-button"} onClick={() => openQuickView("notes")} type="button">
             <StickyNote size={17} />
             Notes
           </button>
-          <button className={viewMode === "reminders" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("reminders")} type="button">
+          <button className={viewMode === "reminders" ? "nav-button active" : "nav-button"} onClick={() => openQuickView("reminders")} type="button">
             <CalendarClock size={17} />
             Reminders
           </button>
-          <button className={viewMode === "settings" ? "nav-button active" : "nav-button"} onClick={() => setViewMode("settings")} type="button">
+          <button className={viewMode === "settings" ? "nav-button active" : "nav-button"} onClick={() => openQuickView("settings")} type="button">
             <Settings size={17} />
             Settings
           </button>
@@ -1851,9 +1880,31 @@ function App() {
 
       <section className={`app-main app-main-${viewMode}`}>
       <section className="topbar">
-        <div>
-          <p className="eyebrow">AI-enabled task command center</p>
-          <h1>{viewMode === "home" ? "Today, tasks, notes, and AI drafts" : viewMode === "ai-engine" ? "AI Generation Engine" : "Tasks, notes, and AI drafting"}</h1>
+        <div className="topbar-main">
+          <div className="topbar-heading-row">
+            <button className="menu-button" onClick={() => setNavMenuOpen((current) => !current)} type="button" aria-expanded={navMenuOpen} aria-label="Open navigation menu">
+              <Menu size={18} />
+              Menu
+            </button>
+            <div>
+              <p className="eyebrow">AI-enabled task command center</p>
+              <h1>{viewMode === "home" ? "Today, tasks, notes, and AI drafts" : viewMode === "ai-engine" ? "AI Generation Engine" : "Tasks, notes, and AI drafting"}</h1>
+            </div>
+          </div>
+          <div className="topbar-shortcuts" aria-label="Quick navigation">
+            <button className={viewMode === "work" || viewMode === "mobile" ? "active" : ""} onClick={openTasksNavigation} type="button">
+              <ListTodo size={15} />
+              Tasks
+            </button>
+            <button className={viewMode === "notes" ? "active" : ""} onClick={() => openQuickView("notes")} type="button">
+              <StickyNote size={15} />
+              Notes
+            </button>
+            <button className={viewMode === "reminders" ? "active" : ""} onClick={() => openQuickView("reminders")} type="button">
+              <CalendarClock size={15} />
+              Today
+            </button>
+          </div>
           <div className="topbar-meta" aria-label="Workspace readiness">
             <span>
               <ShieldCheck size={14} />
@@ -2071,6 +2122,65 @@ function App() {
 
           {mobileSection === "tasks" && (
           <section className="mobile-task-view">
+            <section className="mobile-overview-panel mobile-command-panel">
+              <div className="mobile-command-header">
+                <div>
+                  <p className="eyebrow">Fast action workspace</p>
+                  <h2>
+                    <Smartphone size={18} />
+                    {projects[projectId].name}
+                  </h2>
+                  <p className="context-copy">Jump straight into capture, due work, notes, and AI from one mobile command board.</p>
+                </div>
+                <button className="primary-button" onClick={() => setMobileSection("capture")} type="button">
+                  <Plus size={15} />
+                  Capture
+                </button>
+              </div>
+
+              <div className="mobile-action-grid">
+                <button className="mobile-action-card primary" onClick={() => setMobileSection("capture")} type="button">
+                  <Plus size={16} />
+                  <strong>New task</strong>
+                  <span>Capture a task, note, or checklist</span>
+                </button>
+                <button className="mobile-action-card" onClick={() => { setViewMode("notes"); setCaptureNoteOpen(true); }} type="button">
+                  <StickyNote size={16} />
+                  <strong>New note</strong>
+                  <span>Save reference info quickly</span>
+                </button>
+                <button className="mobile-action-card" onClick={() => setMobileSection("reminders")} type="button">
+                  <CalendarClock size={16} />
+                  <strong>Due now</strong>
+                  <span>{mobileDueNow.length} urgent items</span>
+                </button>
+                <button className="mobile-action-card" onClick={openAiStudio} type="button">
+                  <Sparkles size={16} />
+                  <strong>AI draft</strong>
+                  <span>Open the linked AI workspace</span>
+                </button>
+              </div>
+
+              <div className="mobile-metric-grid fast-metric-grid">
+                <button onClick={() => setViewMode("work")} type="button">
+                  <strong>{summary.total - summary.closed}</strong>
+                  <span>Open</span>
+                </button>
+                <button onClick={() => setMobileSection("reminders")} type="button">
+                  <strong>{mobileDueNow.length}</strong>
+                  <span>Due now</span>
+                </button>
+                <button onClick={() => setViewMode("notes")} type="button">
+                  <strong>{recentNotes.length}</strong>
+                  <span>Recent notes</span>
+                </button>
+                <button onClick={openHomeProjectDashboard} type="button">
+                  <strong>{favoriteTasks.length + favoriteNotes.length}</strong>
+                  <span>Favorites</span>
+                </button>
+              </div>
+            </section>
+
             <div className="mobile-project-strip" aria-label="Mobile project selector">
               {mobileProjectGroups.map((item) => (
                 <button
@@ -2085,101 +2195,63 @@ function App() {
                 </button>
               ))}
             </div>
-            {mobileCurrentProjectGroup && (
-              <div className="mobile-status-groups">
-                <section className="mobile-project-title">
-                  <div>
-                    <strong>{projects[mobileCurrentProjectGroup.projectId].name}</strong>
-                    <span>{mobileActiveProjectTasks.length} active - {mobileFavoriteProjectTasks.length} favorites</span>
-                  </div>
-                  <button className="ghost-button" onClick={() => setViewMode("work")} type="button">
-                    Full view
-                  </button>
-                </section>
 
-                <section className="mobile-task-section">
-                  <div className="result-header">
-                    <h2>
-                      <ListTodo size={18} />
-                      Active tasks
-                    </h2>
-                    <span className="subtle-count">{mobileActiveProjectTasks.length}</span>
-                  </div>
-                  <div className="mobile-task-list">
-                    {mobileActiveProjectTasks.map((item) => (
-                      <MobileTaskCard
-                        activeWorkTaskId={activeWorkTaskId}
-                        item={item}
-                        key={item.id}
-                        now={now}
-                        onOpen={openMobileTask}
-                        onToggleFavorite={toggleTaskFavorite}
-                      />
-                    ))}
-                    {mobileActiveProjectTasks.length === 0 && <p className="empty compact-empty">No active tasks in this project.</p>}
-                  </div>
-                </section>
-
-                <details className="mobile-more-status">
-                  <summary>
-                    <span>Browse by status</span>
-                    <strong>{mobileCurrentProjectGroup.total}</strong>
-                  </summary>
-                  {mobileStatusOrder.map((status) => (
-                  <MobileStatusSection
+            <section className="mobile-task-section mobile-focus-section">
+              <div className="result-header">
+                <h2>
+                  <CalendarClock size={18} />
+                  Do now
+                </h2>
+                <button className="ghost-button compact-action" onClick={() => setMobileSection("reminders")} type="button">
+                  Open today
+                </button>
+              </div>
+              <div className="mobile-task-list">
+                {mobileDueNow.map((item) => (
+                  <MobileTaskCard
                     activeWorkTaskId={activeWorkTaskId}
-                    items={mobileCurrentProjectGroup.byStatus[status]}
-                    key={status}
+                    item={item}
+                    key={item.id}
                     now={now}
                     onOpen={openMobileTask}
                     onToggleFavorite={toggleTaskFavorite}
-                    status={status}
                   />
-                  ))}
-                </details>
+                ))}
+                {mobileDueNow.length === 0 && <p className="empty compact-empty">Nothing due right now. Nice breathing room.</p>}
               </div>
-            )}
+            </section>
 
-            <section className="mobile-overview-panel">
-              <div className="mobile-section-header">
-                <div>
-                  <p className="eyebrow">Mobile task workspace</p>
-                  <h2>
-                    <Smartphone size={18} />
-                    Today
-                  </h2>
-                </div>
-                <button className="primary-button" onClick={() => setMobileSection("capture")} type="button">
-                  <Plus size={15} />
-                  New
+            <section className="mobile-task-section mobile-focus-section">
+              <div className="result-header">
+                <h2>
+                  <ListTodo size={18} />
+                  Next actions
+                </h2>
+                <button className="ghost-button compact-action" onClick={() => setViewMode("work")} type="button">
+                  Full tasks
                 </button>
               </div>
-              <div className="mobile-metric-grid">
-                <button onClick={() => setViewMode("work")} type="button">
-                  <strong>{summary.total - summary.closed}</strong>
-                  <span>Active</span>
-                </button>
-                <button onClick={() => setViewMode("work")} type="button">
-                  <strong>{favoriteTasks.length + favoriteNotes.length}</strong>
-                  <span>Favorites</span>
-                </button>
-                <button onClick={() => setMobileSection("reminders")} type="button">
-                  <strong>{reminderPlanner.overdue.length + reminderPlanner.today.length}</strong>
-                  <span>Due now</span>
-                </button>
-                <button onClick={openHomeProjectDashboard} type="button">
-                  <strong>{summary.closed}</strong>
-                  <span>Closed</span>
-                </button>
+              <div className="mobile-task-list">
+                {mobileNextActions.map((item) => (
+                  <MobileTaskCard
+                    activeWorkTaskId={activeWorkTaskId}
+                    item={item}
+                    key={item.id}
+                    now={now}
+                    onOpen={openMobileTask}
+                    onToggleFavorite={toggleTaskFavorite}
+                  />
+                ))}
+                {mobileNextActions.length === 0 && <p className="empty compact-empty">No active tasks in this project.</p>}
               </div>
             </section>
 
             {(favoriteTasks.length > 0 || favoriteNotes.length > 0) && (
-              <section className="mobile-favorites">
+              <section className="mobile-favorites mobile-quick-links">
                 <div className="mobile-section-header">
                   <h2>
                     <Star size={18} />
-                    Favorites
+                    Quick links
                   </h2>
                 </div>
                 <div className="mobile-favorite-strip">
@@ -2203,6 +2275,26 @@ function App() {
                   ))}
                 </div>
               </section>
+            )}
+
+            {mobileCurrentProjectGroup && (
+              <details className="mobile-more-status mobile-status-drawer">
+                <summary>
+                  <span>Browse all task statuses</span>
+                  <strong>{mobileCurrentProjectGroup.total}</strong>
+                </summary>
+                {mobileStatusOrder.map((status) => (
+                <MobileStatusSection
+                  activeWorkTaskId={activeWorkTaskId}
+                  items={mobileCurrentProjectGroup.byStatus[status]}
+                  key={status}
+                  now={now}
+                  onOpen={openMobileTask}
+                  onToggleFavorite={toggleTaskFavorite}
+                  status={status}
+                />
+                ))}
+              </details>
             )}
           </section>
           )}
@@ -2437,7 +2529,7 @@ function App() {
 
           <section className="notes-grid">
             {visibleNotes.map((note) => (
-                <article className={`${note.pinned ? "note-card pinned" : "note-card"} ${note.favorite ? "favorite" : ""}`} id={`note-${note.id}`} key={note.id}>
+                <article className={`${note.pinned ? "note-card pinned" : "note-card"} ${note.favorite ? "favorite" : ""} ${selectedNoteId === note.id ? "active" : ""}`} id={`note-${note.id}`} key={note.id}>
                   <div className="note-card-header">
                     <span className={`project-chip project-${note.projectId}`}>{projects[note.projectId].name}</span>
                     <div className="note-card-actions">
@@ -2449,42 +2541,18 @@ function App() {
                       </button>
                     </div>
                   </div>
-                  <input
-                    className="note-title-input"
-                    value={note.title}
-                    onChange={(event) => updateNote(note.id, { title: event.target.value })}
-                  />
-                  <label className="note-status-field">
-                    Status
-                    <select value={note.status ?? "Active"} onChange={(event) => updateNote(note.id, { status: event.target.value as AppNote["status"] })}>
-                      <option>Active</option>
-                      <option>Closed</option>
-                    </select>
-                  </label>
-                  <div className="note-entry-list">
-                    {note.entries.map((entry) => (
-                      <div className="note-entry" key={entry.id}>
-                        <textarea
-                          className="note-content-input"
-                          value={entry.content}
-                          onChange={(event) => updateNoteEntry(note.id, entry.id, event.target.value)}
-                          placeholder="Add note detail..."
-                        />
-                        <div className="note-entry-footer">
-                          <small>{new Date(entry.updatedAt).toLocaleString()}</small>
-                          <button className="ghost-button icon-button" onClick={() => removeNoteEntry(note.id, entry.id)} type="button" title="Delete this note entry">
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {note.entries.length === 0 && <p className="empty compact-empty">No entries under this title yet.</p>}
-                  </div>
+                  <button className="note-card-preview" onClick={() => openNote(note)} type="button">
+                    <strong>{note.title}</strong>
+                    <span className={`status-pill ${(note.status ?? "Active") === "Closed" ? "status-closed" : "status-open"}`}>
+                      {note.status ?? "Active"}
+                    </span>
+                    <p>{note.entries[0]?.content || note.content || "Open this note to review details, decisions, or reference information."}</p>
+                  </button>
                   <div className="note-footer">
-                    <small>{note.entries.length} {note.entries.length === 1 ? "entry" : "entries"}</small>
-                    <button className="ghost-button" onClick={() => addNoteEntry(note.id)} type="button">
-                      <Plus size={15} />
-                      Add entry
+                    <small>{note.entries.length} {note.entries.length === 1 ? "entry" : "entries"} · Updated {new Date(note.updatedAt).toLocaleDateString()}</small>
+                    <button className="ghost-button" onClick={() => openNote(note)} type="button">
+                      <Maximize2 size={15} />
+                      Open full screen
                     </button>
                     <button className="ghost-button icon-button" onClick={() => removeNote(note.id)} type="button" title="Delete note">
                       <Trash2 size={15} />
@@ -3010,7 +3078,7 @@ function App() {
           </details>
 
           {taskBrowserOpen && activeWorkTask ? (
-            <section className="panel" id="task-details-section">
+            <section className="panel task-details-panel" id="task-details-section">
               <div className="result-header">
                 <h2>
                   <ListTodo size={18} />
@@ -3072,7 +3140,14 @@ function App() {
                     <CheckSquare size={17} />
                     Checklist
                   </h3>
-                  <span>{activeWorkTask.checklist.filter((item) => item.done).length}/{activeWorkTask.checklist.length} done</span>
+                  <div className="checklist-header-actions">
+                    <span>{closedChecklistItems.length}/{activeWorkTask.checklist.length} done</span>
+                    {closedChecklistItems.length > 0 && (
+                      <button className="ghost-button checklist-toggle" onClick={() => setShowClosedChecklistItems((current) => !current)} type="button">
+                        {showClosedChecklistItems ? "Hide closed" : `Show closed (${closedChecklistItems.length})`}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="checklist-add">
                   <input
@@ -3088,7 +3163,21 @@ function App() {
                   </button>
                 </div>
                 <div className="checklist-list">
-                  {activeWorkTask.checklist.map((item) => (
+                  {visibleChecklistItems.map((item) => (
+                    <div className={item.done ? "checklist-item done" : "checklist-item"} key={item.id}>
+                      <input
+                        aria-label={`Complete ${item.text}`}
+                        checked={item.done}
+                        onChange={(event) => updateChecklistItem(item.id, { done: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <input value={item.text} onChange={(event) => updateChecklistItem(item.id, { text: event.target.value })} />
+                      <button className="ghost-button" onClick={() => removeChecklistItem(item.id)} type="button" title="Remove checklist item">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                  {showClosedChecklistItems && closedChecklistItems.map((item) => (
                     <div className={item.done ? "checklist-item done" : "checklist-item"} key={item.id}>
                       <input
                         aria-label={`Complete ${item.text}`}
@@ -3103,6 +3192,9 @@ function App() {
                     </div>
                   ))}
                   {activeWorkTask.checklist.length === 0 && <p className="empty">Add items here for shopping lists, subtasks, or simple tick-off work.</p>}
+                  {activeWorkTask.checklist.length > 0 && visibleChecklistItems.length === 0 && !showClosedChecklistItems && (
+                    <p className="empty compact-empty">All checklist items are closed. Use "Show closed" to review or reopen them.</p>
+                  )}
                 </div>
               </section>
               <p className="context-copy">
@@ -3656,6 +3748,84 @@ function App() {
           </div>
           <div className="preview-modal-meta">
             <SlideMeta slide={activePreviewSlide} />
+          </div>
+        </div>
+      )}
+      {viewMode === "notes" && selectedNote && (
+        <div className="preview-modal note-preview-modal" role="dialog" aria-modal="true" aria-label="Full screen note preview">
+          <div className="preview-modal-header">
+            <div>
+              <span>{projects[selectedNote.projectId].name} · {selectedNote.entries.length} {selectedNote.entries.length === 1 ? "entry" : "entries"}</span>
+              <strong>{selectedNote.title || "Untitled note"}</strong>
+            </div>
+            <div className="preview-modal-actions">
+              <button className="ghost-button" onClick={() => addNoteEntry(selectedNote.id)} type="button">
+                <Plus size={15} />
+                Add entry
+              </button>
+              <button onClick={closeNotePreview} type="button">
+                <Minimize2 size={16} />
+                Exit
+              </button>
+              <button onClick={closeNotePreview} type="button" title="Close full screen note preview">
+                <X size={17} />
+              </button>
+            </div>
+          </div>
+          <div className="preview-modal-stage note-preview-stage">
+            <section className="note-preview-panel">
+              <div className="note-preview-toolbar">
+                <span className={`project-chip project-${selectedNote.projectId}`}>{projects[selectedNote.projectId].name}</span>
+                <div className="note-card-actions">
+                  <button className={selectedNote.favorite ? "ghost-button icon-button favorite-toggle active" : "ghost-button icon-button favorite-toggle"} onClick={() => updateNote(selectedNote.id, { favorite: !selectedNote.favorite })} type="button" title={selectedNote.favorite ? "Remove favorite" : "Add favorite"}>
+                    <Star size={15} />
+                  </button>
+                  <button className="ghost-button icon-button" onClick={() => updateNote(selectedNote.id, { pinned: !selectedNote.pinned })} type="button" title={selectedNote.pinned ? "Unpin note" : "Pin note"}>
+                    <Pin size={15} />
+                  </button>
+                </div>
+              </div>
+              <div className="note-preview-meta">
+                <input
+                  className="note-title-input"
+                  value={selectedNote.title}
+                  onChange={(event) => updateNote(selectedNote.id, { title: event.target.value })}
+                />
+                <label className="note-status-field">
+                  Status
+                  <select value={selectedNote.status ?? "Active"} onChange={(event) => updateNote(selectedNote.id, { status: event.target.value as AppNote["status"] })}>
+                    <option>Active</option>
+                    <option>Closed</option>
+                  </select>
+                </label>
+              </div>
+              <div className="note-entry-list note-preview-entry-list">
+                {selectedNote.entries.map((entry) => (
+                  <div className="note-entry" key={entry.id}>
+                    <textarea
+                      className="note-content-input"
+                      value={entry.content}
+                      onChange={(event) => updateNoteEntry(selectedNote.id, entry.id, event.target.value)}
+                      placeholder="Add note detail..."
+                    />
+                    <div className="note-entry-footer">
+                      <small>{new Date(entry.updatedAt).toLocaleString()}</small>
+                      <button className="ghost-button icon-button" onClick={() => removeNoteEntry(selectedNote.id, entry.id)} type="button" title="Delete this note entry">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {selectedNote.entries.length === 0 && <p className="empty compact-empty">No entries under this title yet.</p>}
+              </div>
+            </section>
+          </div>
+          <div className="preview-modal-meta note-preview-footer">
+            <span>Created {new Date(selectedNote.createdAt).toLocaleString()}</span>
+            <span>Updated {new Date(selectedNote.updatedAt).toLocaleString()}</span>
+            <button className="ghost-button icon-button" onClick={() => { removeNote(selectedNote.id); closeNotePreview(); }} type="button" title="Delete note">
+              <Trash2 size={15} />
+            </button>
           </div>
         </div>
       )}
