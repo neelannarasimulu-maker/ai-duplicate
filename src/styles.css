@@ -4468,7 +4468,16 @@ select:focus {
     max-width: min(300px, calc(100vw - 24px));
     overflow: auto;
     padding: 14px;
+    pointer-events: none;
+    position: fixed;
+    transform: translateX(calc(-100% - 24px));
     width: min(300px, calc(100vw - 24px));
+    z-index: 70;
+  }
+
+  .app-rail.open {
+    pointer-events: auto;
+    transform: translateX(0);
   }
 
   .rail-nav {
