@@ -1,7 +1,7 @@
 {
-  "name": "TaskOS AI",
+  "name": "TaskOS",
   "short_name": "TaskOS",
-  "description": "AI-enabled notes and tasks assistant for reminders, documents, summaries, and email drafts.",
+  "description": "A responsive tasks, notes, reminders, and project workspace.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

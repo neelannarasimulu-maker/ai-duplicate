@@ -1,4 +1,4 @@
-import type { InputAsset, ProjectId, TaskStatus, WorkTask } from "../types";
+import type { TaskStatus, WorkTask } from "../types";
 
 export function isValidDateTime(value: string) {
   return Boolean(value && Number.isFinite(new Date(value).getTime()));
@@ -76,41 +76,3 @@ export function taskDateLabel(task: WorkTask) {
   return "No due date";
 }
 
-export function missingDetailsForTask(task: WorkTask) {
-  const missing: string[] = [];
-  if (task.input.trim().length < 20 && task.assets.length === 0) missing.push("Add source input, notes, or a readable file.");
-  if (!task.requirements.outputType.trim()) missing.push("Choose the output type you need.");
-  if (!task.requirements.audience.trim()) missing.push("Describe who the output is for.");
-  if (!task.requirements.sections.trim()) missing.push("List the required sections or structure.");
-  return missing;
-}
-
-export function buildInputQuality(missingDetails: string[], assets: InputAsset[]) {
-  const warnings: string[] = [];
-  const checks: string[] = [];
-  const imageAssets = assets.filter((asset) => asset.type === "image");
-  const unreadableAssets = assets.filter((asset) => asset.type === "file");
-  const truncatedAssets = assets.filter((asset) => asset.content.includes("[Content truncated at"));
-  const readableAssets = assets.filter((asset) => asset.type === "text");
-
-  if (readableAssets.length) checks.push(`${readableAssets.length} readable document${readableAssets.length === 1 ? "" : "s"} included in the prompt.`);
-  if (imageAssets.length) warnings.push("Images are only listed by filename. Upload them directly to ChatGPT or describe the important content.");
-  if (unreadableAssets.length) warnings.push("Some attached files cannot be read in the browser. Paste the important text into the input box.");
-  if (readableAssets.some((asset) => asset.content.includes("no selectable text was found"))) {
-    warnings.push("At least one PDF had no selectable text. For scanned PDFs, paste the important text manually.");
-  }
-  if (truncatedAssets.length) warnings.push("Some extracted source text was truncated for browser performance. Paste any missing critical content manually.");
-  missingDetails.forEach((item) => warnings.push(item));
-
-  if (!warnings.length) checks.push("Prompt has enough source material and output requirements to generate directly.");
-
-  return {
-    status: warnings.length ? "Needs detail" : "Ready",
-    checks,
-    warnings,
-  } as const;
-}
-
-export function taskInputQualityStatus(task: WorkTask) {
-  return `AI input: ${buildInputQuality(missingDetailsForTask(task), task.assets).status.toLowerCase()}`;
-}

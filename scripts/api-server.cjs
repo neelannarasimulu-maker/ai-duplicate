@@ -96,5 +96,5 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`AI Workbench API listening on http://0.0.0.0:${port}`);
+  console.log(`TaskOS API listening on http://0.0.0.0:${port}`);
 });
