@@ -129,7 +129,7 @@ h2 {
 .app-shell {
   display: grid;
   gap: 14px;
-  grid-template-columns: 252px minmax(0, 1fr);
+  grid-template-columns: 1fr;
   margin: 0 auto;
   max-width: 1760px;
   min-height: 100vh;
@@ -158,6 +158,18 @@ h2 {
   z-index: 20;
 }
 
+.project-toolbar {
+  align-items: end;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(220, 229, 218, 0.95);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 320px) minmax(220px, 1fr);
+  padding: 10px;
+}
+
 .view-tabs {
   background: #f8faf7;
   border: 1px solid var(--line);
@@ -179,10 +191,6 @@ h2 {
   background: #17201b;
   border-color: #17201b;
   color: #ffffff;
-}
-
-.mobile-menu {
-  display: none;
 }
 
 .brand-block {
@@ -236,35 +244,6 @@ h2 {
   padding-left: 0;
 }
 
-.workspace-rail {
-  align-self: start;
-  background: linear-gradient(180deg, #17201b, #21342b);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius);
-  box-shadow: 0 18px 48px rgba(23, 32, 27, 0.18);
-  color: #ffffff;
-  display: grid;
-  gap: 14px;
-  max-height: calc(100vh - 96px);
-  overflow: auto;
-  padding: 12px;
-  position: sticky;
-  top: 96px;
-}
-
-.rail-title {
-  align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  display: flex;
-  gap: 8px;
-  padding-bottom: 12px;
-}
-
-.rail-close {
-  display: none;
-  margin-left: auto;
-}
-
 .project-list,
 .task-list,
 .notes-list,
@@ -273,48 +252,6 @@ h2 {
 .note-entry-stack {
   display: grid;
   gap: 8px;
-}
-
-.project-button {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #ecf5ef;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  justify-content: stretch;
-  text-align: left;
-  width: 100%;
-}
-
-.project-button.active {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.28);
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.project-button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-button strong {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  min-width: 28px;
-  padding: 2px 8px;
-  text-align: center;
-}
-
-.rail-panel {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius);
-  padding: 10px;
-}
-
-.rail-panel label {
-  color: #d8e7df;
 }
 
 .workspace-main {
@@ -425,6 +362,25 @@ h2 {
   gap: 8px;
   justify-content: space-between;
   min-width: 0;
+}
+
+.compact-actions {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.compact-actions select {
+  min-height: 34px;
+  padding: 6px 9px;
+  width: auto;
+}
+
+.compact-button {
+  min-height: 32px;
+  padding: 6px 10px;
 }
 
 .section-heading select {
@@ -655,10 +611,6 @@ h2 {
   font-weight: 750;
 }
 
-.drawer-scrim {
-  display: none;
-}
-
 @media (max-width: 1280px) {
   .workspace-grid,
   .task-workspace,
@@ -687,10 +639,6 @@ h2 {
     top: 0;
   }
 
-  .mobile-menu {
-    display: inline-flex;
-  }
-
   .sync-button {
     width: 42px;
   }
@@ -715,38 +663,8 @@ h2 {
     grid-column: 1 / -1;
   }
 
-  .drawer-scrim {
-    background: rgba(10, 14, 12, 0.42);
-    border: 0;
-    display: block;
-    inset: 0;
-    position: fixed;
-    z-index: 39;
-  }
-
-  .workspace-rail {
-    bottom: 10px;
-    left: 10px;
-    max-height: calc(100vh - 20px);
-    max-width: min(320px, calc(100vw - 20px));
-    opacity: 0;
-    pointer-events: none;
-    position: fixed;
-    top: 10px;
-    transform: translateX(calc(-100% - 24px));
-    transition: opacity 180ms ease, transform 180ms ease;
-    width: min(320px, calc(100vw - 20px));
-    z-index: 40;
-  }
-
-  .workspace-rail.open {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0);
-  }
-
-  .rail-close {
-    display: inline-flex;
+  .project-toolbar {
+    grid-template-columns: 1fr;
   }
 
   .workspace-main {
@@ -845,6 +763,15 @@ h2 {
   .section-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .compact-actions {
+    justify-content: stretch;
+  }
+
+  .compact-actions .compact-button,
+  .compact-actions select {
+    width: 100%;
   }
 
   .section-heading select {

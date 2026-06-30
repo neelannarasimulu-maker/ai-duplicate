@@ -4,8 +4,6 @@ import {
   Check,
   Circle,
   ListTodo,
-  Menu,
-  Moon,
   Pin,
   Plus,
   RefreshCw,
@@ -14,7 +12,6 @@ import {
   Star,
   StickyNote,
   Trash2,
-  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -35,6 +32,7 @@ import type { AppNote, AppNoteEntry, ChecklistItem, Priority, ProjectId, Require
 
 type ViewFilter = "active" | "today" | "upcoming" | "closed" | "all";
 type ActiveView = "tasks" | "notes";
+type NoteFilter = "active" | "completed" | "all";
 
 const taskStorageKey = "ai-workbench-work-tasks";
 const outputStorageKey = "ai-workbench-saved-outputs";
@@ -105,18 +103,48 @@ function App() {
   const [projectId, setProjectId] = useState<ProjectId>("personal");
   const [activeView, setActiveView] = useState<ActiveView>("tasks");
   const [filter, setFilter] = useState<ViewFilter>("active");
+  const [noteFilter, setNoteFilter] = useState<NoteFilter>("active");
   const [query, setQuery] = useState("");
   const [taskDraft, setTaskDraft] = useState(emptyTaskDraft);
   const [noteDraft, setNoteDraft] = useState(emptyNoteDraft);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [showCompletedChecklist, setShowCompletedChecklist] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("Loading local workspace...");
   const [loading, setLoading] = useState(true);
 
-  const projectIds = Object.keys(projects) as ProjectId[];
   const projectTasks = useMemo(() => tasks.filter((task) => task.projectId === projectId), [projectId, tasks]);
   const projectNotes = useMemo(() => notes.filter((note) => note.projectId === projectId), [notes, projectId]);
+  const metrics = useMemo(() => buildMetrics(projectTasks), [projectTasks]);
+  const planner = useMemo(() => buildPlanner(projectTasks), [projectTasks]);
+  const projectStats = useMemo(() => buildProjectStats(tasks, projects), [tasks, projects]);
   const activeTask = projectTasks.find((task) => task.id === activeTaskId) ?? null;
-  const activeNote = projectNotes.find((note) => note.id === activeNoteId) ?? null;
+  const visibleTasks = useMemo(() => {
+    return sortedTasks(projectTasks).filter((task) => {
+      const haystack = `${task.title} ${task.details} ${task.category} ${projects[task.projectId]?.name ?? ""}`.toLowerCase();
+      const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
+      const matchesFilter =
+        filter === "all" ||
+        (filter === "active" && task.status !== "Closed") ||
+        (filter === "closed" && task.status === "Closed") ||
+        (filter === "today" && isTodayOrOverdue(task)) ||
+        (filter === "upcoming" && isUpcoming(task));
+      return matchesQuery && matchesFilter;
+    });
+  }, [filter, projectTasks, projects, query]);
+
+  const visibleNotes = useMemo(() => {
+    return sortedNotes(projectNotes).filter((note) => {
+      const content = note.entries.map((entry) => entry.content).join(" ");
+      const haystack = `${note.title} ${content} ${projects[note.projectId]?.name ?? ""}`.toLowerCase();
+      const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
+      const status = note.status ?? "Active";
+      const matchesStatus =
+        noteFilter === "all" ||
+        (noteFilter === "active" && status !== "Closed") ||
+        (noteFilter === "completed" && status === "Closed");
+      return matchesQuery && matchesStatus;
+    });
+  }, [noteFilter, projectNotes, projects, query]);
+  const activeNote = visibleNotes.find((note) => note.id === activeNoteId) ?? null;
 
   useEffect(() => {
     void loadCachedData();
@@ -133,12 +161,12 @@ function App() {
   }, [activeTask, activeTaskId, projectTasks]);
 
   useEffect(() => {
-    if (!activeNote && projectNotes.length) {
-      setActiveNoteId(sortedNotes(projectNotes)[0].id);
-    } else if (!projectNotes.length && activeNoteId) {
+    if (!activeNote && visibleNotes.length) {
+      setActiveNoteId(visibleNotes[0].id);
+    } else if (!visibleNotes.length && activeNoteId) {
       setActiveNoteId("");
     }
-  }, [activeNote, activeNoteId, projectNotes]);
+  }, [activeNote, activeNoteId, visibleNotes]);
 
   async function loadCachedData() {
     try {
@@ -184,32 +212,6 @@ function App() {
       setLoading(false);
     }
   }
-
-  const metrics = useMemo(() => buildMetrics(projectTasks), [projectTasks]);
-  const planner = useMemo(() => buildPlanner(projectTasks), [projectTasks]);
-  const projectStats = useMemo(() => buildProjectStats(tasks, projects), [tasks, projects]);
-  const visibleTasks = useMemo(() => {
-    return sortedTasks(projectTasks).filter((task) => {
-      const haystack = `${task.title} ${task.details} ${task.category} ${projects[task.projectId]?.name ?? ""}`.toLowerCase();
-      const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
-      const matchesFilter =
-        filter === "all" ||
-        (filter === "active" && task.status !== "Closed") ||
-        (filter === "closed" && task.status === "Closed") ||
-        (filter === "today" && isTodayOrOverdue(task)) ||
-        (filter === "upcoming" && isUpcoming(task));
-      return matchesQuery && matchesFilter;
-    });
-  }, [filter, projectTasks, projects, query]);
-
-  const visibleNotes = useMemo(() => {
-    return sortedNotes(projectNotes).filter((note) => {
-      const content = note.entries.map((entry) => entry.content).join(" ");
-      const haystack = `${note.title} ${content} ${projects[note.projectId]?.name ?? ""}`.toLowerCase();
-      const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
-      return matchesQuery;
-    });
-  }, [projectNotes, projects, query]);
 
   function createTask() {
     const title = taskDraft.title.trim();
@@ -332,6 +334,12 @@ function App() {
     persistNotes(notes.map((note) => (note.id === id ? { ...note, ...patch, updatedAt: new Date().toISOString() } : note)));
   }
 
+  function completeNote(note: AppNote) {
+    patchNote(note.id, { status: "Closed" });
+    if (activeNoteId === note.id) setActiveNoteId("");
+    setMessage("Note completed.");
+  }
+
   function addNoteEntry(note: AppNote) {
     const now = new Date().toISOString();
     const entry: AppNoteEntry = { id: createId("entry"), content: "", createdAt: now, updatedAt: now };
@@ -370,9 +378,6 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <button className="icon-button mobile-menu" onClick={() => setMenuOpen(true)} type="button" aria-label="Open workspace menu">
-          <Menu size={18} />
-        </button>
         <div className="brand-block">
           <span className="brand-icon"><ListTodo size={20} /></span>
           <div>
@@ -400,34 +405,25 @@ function App() {
         </button>
       </header>
 
-      {menuOpen && <button className="drawer-scrim" onClick={() => setMenuOpen(false)} type="button" aria-label="Close menu" />}
-
-      <aside className={`workspace-rail ${menuOpen ? "open" : ""}`}>
-        <div className="rail-title">
-          <Moon size={18} />
-          <strong>Workspace</strong>
-          <button className="icon-button rail-close" onClick={() => setMenuOpen(false)} type="button" aria-label="Close menu">
-            <X size={16} />
-          </button>
-        </div>
-        <nav className="project-list" aria-label="Projects">
-          {projectStats.map((project) => (
-            <button className={projectId === project.id ? "project-button active" : "project-button"} key={project.id} onClick={() => { setProjectId(project.id); setMenuOpen(false); }} type="button">
-              <span>{project.name}</span>
-              <strong>{project.open}</strong>
-            </button>
-          ))}
-        </nav>
-        <div className="rail-panel">
+      <section className="project-toolbar" aria-label="Project filter">
+        <label>
+          Project
+          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+            {projectStats.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name} ({project.open})
+              </option>
+            ))}
+          </select>
+        </label>
           <label>
-            Rename selected project
+            Project name
             <input
               value={projects[projectId]?.name ?? ""}
               onChange={(event) => updateProjectName(projectId, event.target.value)}
             />
           </label>
-        </div>
-      </aside>
+      </section>
 
       <main className="workspace-main">
         {activeView === "tasks" && (
@@ -460,9 +456,7 @@ function App() {
                 <section className="panel create-panel">
                   <div className="section-heading">
                     <h2><Plus size={18} /> New task</h2>
-                    <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                      {projectIds.map((id) => <option key={id} value={id}>{projects[id].name}</option>)}
-                    </select>
+                    <span className="pill">{projects[projectId]?.name ?? projectId}</span>
                   </div>
                   <input value={taskDraft.title} onChange={(event) => setTaskDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Task title" />
                   <textarea value={taskDraft.details} onChange={(event) => setTaskDraft((current) => ({ ...current, details: event.target.value }))} placeholder="Details, context, links, names, anything useful" />
@@ -512,6 +506,8 @@ function App() {
                     removeChecklistItem={removeChecklistItem}
                     removeTask={removeTask}
                     task={activeTask}
+                    showCompletedChecklist={Boolean(showCompletedChecklist[activeTask.id])}
+                    toggleCompletedChecklist={() => setShowCompletedChecklist((current) => ({ ...current, [activeTask.id]: !current[activeTask.id] }))}
                   />
                 ) : (
                   <section className="panel empty-detail">
@@ -545,7 +541,14 @@ function App() {
               <section className="panel notes-panel">
                 <div className="section-heading">
                   <h2><StickyNote size={18} /> Notes</h2>
-                  <span className="pill">{visibleNotes.length}</span>
+                  <div className="compact-actions">
+                    <select value={noteFilter} onChange={(event) => setNoteFilter(event.target.value as NoteFilter)}>
+                      <option value="active">Active</option>
+                      <option value="completed">Completed</option>
+                      <option value="all">All</option>
+                    </select>
+                    <span className="pill">{visibleNotes.length}</span>
+                  </div>
                 </div>
                 <div className="notes-list">
                   {visibleNotes.map((note) => (
@@ -570,6 +573,7 @@ function App() {
                   patchNote={patchNote}
                   patchNoteEntry={patchNoteEntry}
                   projects={projects}
+                  completeNote={completeNote}
                   removeNote={removeNote}
                   removeNoteEntry={removeNoteEntry}
                 />
@@ -594,7 +598,9 @@ function TaskDetail({
   projects,
   removeChecklistItem,
   removeTask,
+  showCompletedChecklist,
   task,
+  toggleCompletedChecklist,
 }: {
   addChecklistItem: (task: WorkTask) => void;
   patchChecklistItem: (task: WorkTask, itemId: string, patch: Partial<ChecklistItem>) => void;
@@ -602,9 +608,12 @@ function TaskDetail({
   projects: ProjectSettings;
   removeChecklistItem: (task: WorkTask, itemId: string) => void;
   removeTask: (id: string) => void;
+  showCompletedChecklist: boolean;
   task: WorkTask;
+  toggleCompletedChecklist: () => void;
 }) {
   const complete = task.checklist.filter((item) => item.done).length;
+  const visibleChecklist = showCompletedChecklist ? task.checklist : task.checklist.filter((item) => !item.done);
 
   return (
     <section className="panel task-detail">
@@ -633,10 +642,17 @@ function TaskDetail({
       </div>
       <div className="section-heading">
         <h2><Check size={18} /> Checklist</h2>
-        <span className="pill">{complete}/{task.checklist.length}</span>
+        <div className="compact-actions">
+          {complete > 0 && (
+            <button className="ghost-button compact-button" onClick={toggleCompletedChecklist} type="button">
+              {showCompletedChecklist ? "Hide completed" : `Show completed (${complete})`}
+            </button>
+          )}
+          <span className="pill">{complete}/{task.checklist.length}</span>
+        </div>
       </div>
       <div className="checklist">
-        {task.checklist.map((item) => (
+        {visibleChecklist.map((item) => (
           <div className="check-item" key={item.id}>
             <button className={item.done ? "icon-button checked" : "icon-button"} onClick={() => patchChecklistItem(task, item.id, { done: !item.done })} type="button" aria-label="Toggle checklist item">
               {item.done ? <Check size={15} /> : <Circle size={15} />}
@@ -646,6 +662,7 @@ function TaskDetail({
           </div>
         ))}
         {task.checklist.length === 0 && <p className="empty">No checklist items yet.</p>}
+        {task.checklist.length > 0 && visibleChecklist.length === 0 && <p className="empty">All checklist items are completed.</p>}
       </div>
       <button className="ghost-button" onClick={() => addChecklistItem(task)} type="button"><Plus size={16} /> Add checklist item</button>
       <p className="history-line">Created {formatDateTime(task.createdAt)} / Updated {formatDateTime(task.updatedAt)}</p>
@@ -655,6 +672,7 @@ function TaskDetail({
 
 function NoteDetail({
   addNoteEntry,
+  completeNote,
   note,
   patchNote,
   patchNoteEntry,
@@ -663,6 +681,7 @@ function NoteDetail({
   removeNoteEntry,
 }: {
   addNoteEntry: (note: AppNote) => void;
+  completeNote: (note: AppNote) => void;
   note: AppNote;
   patchNote: (id: string, patch: Partial<AppNote>) => void;
   patchNoteEntry: (note: AppNote, entryId: string, content: string) => void;
@@ -673,7 +692,16 @@ function NoteDetail({
   return (
     <section className="panel note-detail">
       <div className="detail-toolbar">
-        <span className="pill">{projects[note.projectId]?.name ?? note.projectId}</span>
+        <span className="pill">{note.status === "Closed" ? "Completed" : projects[note.projectId]?.name ?? note.projectId}</span>
+        {note.status === "Closed" ? (
+          <button className="ghost-button compact-button" onClick={() => patchNote(note.id, { status: "Active" })} type="button">
+            Reopen
+          </button>
+        ) : (
+          <button className="ghost-button compact-button" onClick={() => completeNote(note)} type="button">
+            Complete
+          </button>
+        )}
         <button className={note.favorite ? "icon-button active" : "icon-button"} onClick={() => patchNote(note.id, { favorite: !note.favorite })} type="button" aria-label="Toggle note favorite"><Star size={16} /></button>
         <button className={note.pinned ? "icon-button active" : "icon-button"} onClick={() => patchNote(note.id, { pinned: !note.pinned })} type="button" aria-label="Toggle note pin"><Pin size={16} /></button>
         <button className="icon-button danger-icon" onClick={() => removeNote(note.id)} type="button" aria-label="Delete note"><Trash2 size={16} /></button>
