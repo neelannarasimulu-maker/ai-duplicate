@@ -12,6 +12,7 @@ import {
   Star,
   StickyNote,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -107,6 +108,8 @@ function App() {
   const [query, setQuery] = useState("");
   const [taskDraft, setTaskDraft] = useState(emptyTaskDraft);
   const [noteDraft, setNoteDraft] = useState(emptyNoteDraft);
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [showCompletedChecklist, setShowCompletedChecklist] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("Loading local workspace...");
   const [loading, setLoading] = useState(true);
@@ -256,6 +259,7 @@ function App() {
     setTaskDraft(emptyTaskDraft);
     setActiveTaskId(nextTask.id);
     setActiveView("tasks");
+    setTaskModalOpen(false);
     setFilter("active");
     setMessage("Task saved.");
   }
@@ -327,6 +331,7 @@ function App() {
     setNoteDraft(emptyNoteDraft);
     setActiveNoteId(note.id);
     setActiveView("notes");
+    setNoteModalOpen(false);
     setMessage("Note saved.");
   }
 
@@ -453,32 +458,22 @@ function App() {
           <>
             <section className="workspace-grid task-workspace">
               <section className="task-column">
-                <section className="panel create-panel">
-                  <div className="section-heading">
-                    <h2><Plus size={18} /> New task</h2>
-                    <span className="pill">{projects[projectId]?.name ?? projectId}</span>
-                  </div>
-                  <input value={taskDraft.title} onChange={(event) => setTaskDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Task title" />
-                  <textarea value={taskDraft.details} onChange={(event) => setTaskDraft((current) => ({ ...current, details: event.target.value }))} placeholder="Details, context, links, names, anything useful" />
-                  <textarea className="compact-textarea" value={taskDraft.checklistText} onChange={(event) => setTaskDraft((current) => ({ ...current, checklistText: event.target.value }))} placeholder="Checklist items, one per line" />
-                  <div className="form-grid">
-                    <label>Priority<select value={taskDraft.priority} onChange={(event) => setTaskDraft((current) => ({ ...current, priority: event.target.value as Priority }))}>{priorities.map((item) => <option key={item}>{item}</option>)}</select></label>
-                    <label>Due date<input type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft((current) => ({ ...current, dueDate: event.target.value }))} /></label>
-                    <label>Reminder<input type="datetime-local" value={toLocalInput(taskDraft.reminderAt)} onChange={(event) => setTaskDraft((current) => ({ ...current, reminderAt: fromLocalInput(event.target.value) }))} /></label>
-                  </div>
-                  <button className="primary-button" onClick={createTask} type="button"><Save size={16} /> Save task</button>
-                </section>
-
                 <section className="panel list-panel">
                   <div className="section-heading">
                     <h2><ListTodo size={18} /> Tasks</h2>
-                    <select value={filter} onChange={(event) => setFilter(event.target.value as ViewFilter)}>
-                      <option value="active">Active</option>
-                      <option value="today">Due now</option>
-                      <option value="upcoming">Upcoming</option>
-                      <option value="closed">Closed</option>
-                      <option value="all">All</option>
-                    </select>
+                    <div className="compact-actions">
+                      <button className="primary-button compact-button" onClick={() => setTaskModalOpen(true)} type="button">
+                        <Plus size={15} />
+                        New task
+                      </button>
+                      <select value={filter} onChange={(event) => setFilter(event.target.value as ViewFilter)}>
+                        <option value="active">Active</option>
+                        <option value="today">Due now</option>
+                        <option value="upcoming">Upcoming</option>
+                        <option value="closed">Closed</option>
+                        <option value="all">All</option>
+                      </select>
+                    </div>
                   </div>
                   <div className="task-list">
                     {visibleTasks.map((task) => (
@@ -528,20 +523,14 @@ function App() {
         ) : (
           <section className="workspace-grid notes-workspace">
             <section className="notes-list-column">
-              <section className="panel create-panel">
-                <div className="section-heading">
-                  <h2><StickyNote size={18} /> New note</h2>
-                  <span className="pill">{projects[projectId]?.name ?? projectId}</span>
-                </div>
-                <input value={noteDraft.title} onChange={(event) => setNoteDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Note title" />
-                <textarea value={noteDraft.content} onChange={(event) => setNoteDraft((current) => ({ ...current, content: event.target.value }))} placeholder="Reference, decision, contact detail, or thought" />
-                <button className="primary-button" onClick={createNote} type="button"><Save size={16} /> Save note</button>
-              </section>
-
               <section className="panel notes-panel">
                 <div className="section-heading">
                   <h2><StickyNote size={18} /> Notes</h2>
                   <div className="compact-actions">
+                    <button className="primary-button compact-button" onClick={() => setNoteModalOpen(true)} type="button">
+                      <Plus size={15} />
+                      New note
+                    </button>
                     <select value={noteFilter} onChange={(event) => setNoteFilter(event.target.value as NoteFilter)}>
                       <option value="active">Active</option>
                       <option value="completed">Completed</option>
@@ -587,6 +576,58 @@ function App() {
           </section>
         )}
       </main>
+
+      {taskModalOpen && (
+        <div className="modal-layer" role="presentation">
+          <button className="modal-backdrop" onClick={() => setTaskModalOpen(false)} type="button" aria-label="Close new task modal" />
+          <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="new-task-title">
+            <div className="modal-header">
+              <div>
+                <h2 id="new-task-title"><Plus size={18} /> New task</h2>
+                <p>{projects[projectId]?.name ?? projectId}</p>
+              </div>
+              <button className="icon-button" onClick={() => setTaskModalOpen(false)} type="button" aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <input value={taskDraft.title} onChange={(event) => setTaskDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Task title" />
+            <textarea value={taskDraft.details} onChange={(event) => setTaskDraft((current) => ({ ...current, details: event.target.value }))} placeholder="Details, context, links, names, anything useful" />
+            <textarea className="compact-textarea" value={taskDraft.checklistText} onChange={(event) => setTaskDraft((current) => ({ ...current, checklistText: event.target.value }))} placeholder="Checklist items, one per line" />
+            <div className="form-grid">
+              <label>Priority<select value={taskDraft.priority} onChange={(event) => setTaskDraft((current) => ({ ...current, priority: event.target.value as Priority }))}>{priorities.map((item) => <option key={item}>{item}</option>)}</select></label>
+              <label>Due date<input type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft((current) => ({ ...current, dueDate: event.target.value }))} /></label>
+              <label>Reminder<input type="datetime-local" value={toLocalInput(taskDraft.reminderAt)} onChange={(event) => setTaskDraft((current) => ({ ...current, reminderAt: fromLocalInput(event.target.value) }))} /></label>
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" onClick={() => setTaskModalOpen(false)} type="button">Cancel</button>
+              <button className="primary-button" onClick={createTask} type="button"><Save size={16} /> Save task</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {noteModalOpen && (
+        <div className="modal-layer" role="presentation">
+          <button className="modal-backdrop" onClick={() => setNoteModalOpen(false)} type="button" aria-label="Close new note modal" />
+          <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="new-note-title">
+            <div className="modal-header">
+              <div>
+                <h2 id="new-note-title"><StickyNote size={18} /> New note</h2>
+                <p>{projects[projectId]?.name ?? projectId}</p>
+              </div>
+              <button className="icon-button" onClick={() => setNoteModalOpen(false)} type="button" aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <input value={noteDraft.title} onChange={(event) => setNoteDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Note title" />
+            <textarea value={noteDraft.content} onChange={(event) => setNoteDraft((current) => ({ ...current, content: event.target.value }))} placeholder="Reference, decision, contact detail, or thought" />
+            <div className="modal-actions">
+              <button className="ghost-button" onClick={() => setNoteModalOpen(false)} type="button">Cancel</button>
+              <button className="primary-button" onClick={createNote} type="button"><Save size={16} /> Save note</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
